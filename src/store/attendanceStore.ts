@@ -94,10 +94,9 @@ interface AttendanceState {
   logToday: (activityId: string, note?: string) => Promise<void>;
   /**
    * Logs a past day the user actually completed but forgot to record.
-   * Rejects (returning false) unless `getBackfillEligibility` allows it and a
-   * reason was written — the rules live in `features/attendance/backfill.ts`.
+   * Rejects (returning false) unless `getBackfillEligibility` allows it.
    */
-  logMissedDay: (activityId: string, dateStr: string, reason: string) => Promise<boolean>;
+  logMissedDay: (activityId: string, dateStr: string, reason?: string | null) => Promise<boolean>;
   /** Logs today AND marks the sequence task as skipped. Streak is maintained but sequence does not advance. */
   logTodayWithSequenceSkip: (activityId: string, note?: string) => Promise<void>;
   /**
@@ -486,10 +485,9 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
     });
   },
 
-  logMissedDay: async (activityId: string, dateStr: string, reason: string) => {
+  logMissedDay: async (activityId: string, dateStr: string, reason?: string | null) => {
     const { logs, notes, taskHistory, activities, sequenceSkips, sequenceDrops } = get();
-    const trimmedReason = reason.trim();
-    if (!trimmedReason) return false;
+    const trimmedReason = reason?.trim();
 
     const activity = activities.find((a) => a.id === activityId);
     const entries = logs[activityId] ?? [];
@@ -528,16 +526,19 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
       }
     }
 
-    // The reason is stored as an ordinary note, so mirror it like appendNote does.
-    const updatedNotes = { ...notes };
-    const existing = updatedNotes[activityId]?.[dateStr] ?? [];
-    updatedNotes[activityId] = {
-      ...updatedNotes[activityId],
-      [dateStr]: [
-        ...existing,
-        { text: trimmedReason, time: dayjs().toISOString(), tz: getCurrentTz() },
-      ],
-    };
+    // Update notes only if a genuine user note was provided
+    let updatedNotes = notes;
+    if (trimmedReason) {
+      updatedNotes = { ...notes };
+      const existing = updatedNotes[activityId]?.[dateStr] ?? [];
+      updatedNotes[activityId] = {
+        ...updatedNotes[activityId],
+        [dateStr]: [
+          ...existing,
+          { text: trimmedReason, time: dayjs().toISOString(), tz: getCurrentTz() },
+        ],
+      };
+    }
 
     // A fixed day can be the one that completes a goal — it stands for work
     // that was actually done, so it settles the goal the same as any other log.

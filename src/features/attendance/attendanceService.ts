@@ -389,10 +389,8 @@ export const attendanceService = {
   /**
    * Records a day the user completed but forgot to log.
    *
-   * Callers must clear `getBackfillEligibility` first — this layer enforces
-   * only the invariant every log path shares (one entry per day) and the one
-   * this path adds (a reason is not optional). The reason is stored as an
-   * ordinary note so it shows up in the day's timeline and in exports.
+   * Callers must clear `getBackfillEligibility` first. A reason is optional
+   * and is stored as an ordinary note only when the user provided one.
    *
    * Entries are inserted in date order rather than appended, so the stored list
    * stays ascending the way every other write leaves it.
@@ -400,11 +398,8 @@ export const attendanceService = {
   logPastDate: async (
     activityId: string,
     dateStr: string,
-    reason: string,
+    reason?: string | null,
   ): Promise<LogEntry | null> => {
-    const trimmed = reason.trim();
-    if (!trimmed) return null;
-
     const logs = await attendanceService.getLogs();
     const activityLogs = logs[activityId] || [];
     if (activityLogs.some((entry) => entry.date === dateStr)) return null;
@@ -422,7 +417,9 @@ export const attendanceService = {
         : [...activityLogs.slice(0, insertAt), newEntry, ...activityLogs.slice(insertAt)];
     await attendanceService.saveLogs(logs);
 
-    await attendanceService.appendNote(activityId, dateStr, trimmed);
+    if (reason && reason.trim()) {
+      await attendanceService.appendNote(activityId, dateStr, reason.trim());
+    }
 
     return newEntry;
   },

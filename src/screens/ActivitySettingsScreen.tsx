@@ -11,6 +11,10 @@ import { to12h, to24h, isValidTime12h, todayStr, formatTime12h } from '../utils/
 import { haptics } from '../utils/haptics';
 import { Card, Chip, EmptyState, PressableScale } from '../components/ui';
 import dayjs from 'dayjs';
+import {
+  requestPermissionsAsync,
+  rescheduleAllNotifications,
+} from '../services/notificationService';
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
@@ -72,6 +76,7 @@ export const ActivitySettingsScreen: React.FC = () => {
   const {
     selectedActivityId,
     activities,
+    logs,
     editActivity,
     resetActivityData,
     appendNote,
@@ -91,6 +96,7 @@ export const ActivitySettingsScreen: React.FC = () => {
   const [reminderMessage, setReminderMessage] = useState(
     () => selectedActivity?.reminderMessage || '',
   );
+  const [isSavingReminder, setIsSavingReminder] = useState(false);
 
   const [timeBoundStartTime, setTimeBoundStartTime] = useState(
     () => to12h(selectedActivity?.timeBoundStartTime || '').time,
@@ -187,19 +193,63 @@ export const ActivitySettingsScreen: React.FC = () => {
   };
 
   const handleSaveReminder = async () => {
+    if (isSavingReminder) return;
     if (!selectedActivityId || !selectedActivity) return;
     const reminderTime24 = to24h(reminderTime, reminderAmPm);
     if (reminderEnabled && !isValidTime12h(reminderTime)) {
       haptics.warning();
       return;
     }
-    await updateReminder(
-      selectedActivityId,
-      reminderEnabled,
-      reminderEnabled ? reminderTime24 : null,
-      reminderMessage,
-    );
-    haptics.success();
+
+    setIsSavingReminder(true);
+    try {
+      await updateReminder(
+        selectedActivityId,
+        reminderEnabled,
+        reminderEnabled ? reminderTime24 : null,
+        reminderMessage,
+      );
+
+      if (!reminderEnabled) {
+        haptics.success();
+        Alert.alert('Reminder saved', 'This habit reminder is turned off.');
+        return;
+      }
+
+      const hasPermission = await requestPermissionsAsync();
+      if (!hasPermission) {
+        haptics.warning();
+        Alert.alert(
+          'Reminder saved',
+          'Allow notifications for Streak Counter in Android settings to receive this reminder.',
+        );
+        return;
+      }
+
+      const updatedActivities = activities.map((activity) => {
+        if (activity.id !== selectedActivityId) return activity;
+        const updated = {
+          ...activity,
+          reminderEnabled: true,
+          reminderTime: reminderTime24,
+        };
+        if (reminderMessage.trim()) updated.reminderMessage = reminderMessage.trim();
+        else delete updated.reminderMessage;
+        return updated;
+      });
+      await rescheduleAllNotifications(updatedActivities, logs);
+      haptics.success();
+      Alert.alert(
+        'Reminder saved',
+        `You will be reminded every day at ${reminderTime} ${reminderAmPm}.`,
+      );
+    } catch (error) {
+      haptics.error();
+      console.error('Failed to save reminder:', error);
+      Alert.alert('Could not save reminder', 'Please try again.');
+    } finally {
+      setIsSavingReminder(false);
+    }
   };
 
   const handleTaskSequenceChange = (newTasks: SequenceTask[]) => {
@@ -534,9 +584,15 @@ export const ActivitySettingsScreen: React.FC = () => {
             )}
             <PressableScale
               onPress={handleSaveReminder}
+              disabled={isSavingReminder}
               style={[
                 styles.saveBtn,
-                { backgroundColor: colors.primary, alignSelf: 'flex-end', marginTop: Spacing.md },
+                {
+                  backgroundColor: colors.primary,
+                  alignSelf: 'flex-end',
+                  marginTop: Spacing.md,
+                  opacity: isSavingReminder ? 0.6 : 1,
+                },
               ]}
               accessibilityRole="button"
               accessibilityLabel="Save reminder"

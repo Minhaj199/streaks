@@ -26,8 +26,13 @@ import { Typography, Spacing, BorderRadius, HitSlop, alpha } from '../constants'
 import { FontAwesome5 } from '@expo/vector-icons';
 import { useTheme } from '../hooks/useTheme';
 import { TaskSequenceEditor } from './TaskSequenceEditor';
-import { FullScreenAlarmHint } from './FullScreenAlarmHint';
-import { HabitAlarm } from '../../modules/habit-alarm';
+import {
+  ReminderEditor,
+  ReminderDraft,
+  toReminderDraft,
+  fromReminderDraft,
+  isReminderDraftValid,
+} from './ReminderEditor';
 import { HabitReminder, SequenceTask } from '../features/attendance/attendanceService';
 import { to12h, to24h, isValidTime12h } from '../utils/dateUtils';
 import { haptics } from '../utils/haptics';
@@ -65,6 +70,9 @@ export interface ActivityFormModalProps {
 }
 
 const GOAL_OPTIONS = [1, 2, 3, 4, 5, 6, 7];
+
+/** Ceiling for the reminder panel's open animation; tall enough for every notice it can show. */
+const REMINDER_MAX_HEIGHT = 560;
 
 export const ActivityFormModal: React.FC<ActivityFormModalProps> = ({
   visible,
@@ -107,10 +115,7 @@ export const ActivityFormModal: React.FC<ActivityFormModalProps> = ({
   const [endAmPm, setEndAmPm] = useState<'AM' | 'PM'>('AM');
 
   const [reminderEnabled, setReminderEnabled] = useState(false);
-  const [reminderTime, setReminderTime] = useState('');
-  const [reminderAmPm, setReminderAmPm] = useState<'AM' | 'PM'>('AM');
-  const [reminderMessage, setReminderMessage] = useState('');
-  const [reminderAlarm, setReminderAlarm] = useState(false);
+  const [reminderDraft, setReminderDraft] = useState<ReminderDraft>(() => toReminderDraft());
 
   const inputRef = useRef<TextInput>(null);
 
@@ -180,11 +185,7 @@ export const ActivityFormModal: React.FC<ActivityFormModalProps> = ({
 
       const hasReminder = !!initialReminder;
       setReminderEnabled(hasReminder);
-      const reminder12 = to12h(initialReminder?.time ?? '');
-      setReminderTime(reminder12.time);
-      setReminderAmPm(reminder12.ampm);
-      setReminderMessage(initialReminder?.message ?? '');
-      setReminderAlarm(initialReminder?.alarm ?? false);
+      setReminderDraft(toReminderDraft(initialReminder));
 
       // Animate pickers to correct state immediately (no animation on open)
       pickerHeight.value = hasGoal ? 60 : 0;
@@ -193,7 +194,7 @@ export const ActivityFormModal: React.FC<ActivityFormModalProps> = ({
       taskSeqOpacity.value = hasTasks ? 1 : 0;
       timeBoundHeight.value = hasTimeBound ? 320 : 0;
       timeBoundOpacity.value = hasTimeBound ? 1 : 0;
-      reminderHeight.value = hasReminder ? 400 : 0;
+      reminderHeight.value = hasReminder ? REMINDER_MAX_HEIGHT : 0;
       reminderOpacity.value = hasReminder ? 1 : 0;
     }
   }, [
@@ -237,7 +238,7 @@ export const ActivityFormModal: React.FC<ActivityFormModalProps> = ({
   const handleReminderToggle = (val: boolean) => {
     haptics.toggle(val);
     setReminderEnabled(val);
-    reminderHeight.value = withTiming(val ? 400 : 0, { duration: 300 });
+    reminderHeight.value = withTiming(val ? REMINDER_MAX_HEIGHT : 0, { duration: 300 });
     reminderOpacity.value = withTiming(val ? 1 : 0, { duration: 250 });
   };
 
@@ -297,15 +298,7 @@ export const ActivityFormModal: React.FC<ActivityFormModalProps> = ({
       timeBoundEnabled && timeBoundType === 'between' ? to24h(timeBoundEndTime, endAmPm) : null,
       activityType,
       activityType === 'goal' ? streakGoal : undefined,
-      reminderEnabled
-        ? [
-            {
-              time: to24h(reminderTime, reminderAmPm),
-              ...(reminderMessage.trim() ? { message: reminderMessage.trim() } : {}),
-              ...(reminderAlarm ? { alarm: true } : {}),
-            },
-          ]
-        : [],
+      reminderEnabled ? [fromReminderDraft(reminderDraft)] : [],
     );
   };
 
@@ -325,10 +318,8 @@ export const ActivityFormModal: React.FC<ActivityFormModalProps> = ({
       : isValidTime12h(timeBoundStartTime));
 
   const isStreakGoalValid = activityType !== 'goal' || streakGoal >= 1;
-  const isReminderValid = !reminderEnabled || isValidTime12h(reminderTime);
+  const isReminderValid = !reminderEnabled || isReminderDraftValid(reminderDraft);
   const canSave = name.trim().length > 0 && isTimeValid && isStreakGoalValid && isReminderValid;
-  const reminderInvalid =
-    reminderEnabled && reminderTime.length > 0 && !isValidTime12h(reminderTime);
 
   const timeOrderInvalid =
     timeBoundEnabled &&
@@ -1076,8 +1067,8 @@ export const ActivityFormModal: React.FC<ActivityFormModalProps> = ({
               <View style={styles.toggleTextWrap}>
                 <Text style={[styles.toggleLabel, { color: colors.textPrimary }]}>Reminder</Text>
                 <Text style={[styles.toggleSub, { color: colors.textSecondary }]}>
-                  {reminderEnabled && isValidTime12h(reminderTime)
-                    ? `${reminderAlarm ? 'Alarm' : 'Daily'} at ${reminderTime} ${reminderAmPm}, unless already logged`
+                  {reminderEnabled && isReminderDraftValid(reminderDraft)
+                    ? `${reminderDraft.mode === 'alarm' ? 'Alarm' : 'Notification'} daily at ${reminderDraft.time} ${reminderDraft.ampm}`
                     : 'Get a notification at a set time'}
                 </Text>
               </View>
@@ -1091,104 +1082,14 @@ export const ActivityFormModal: React.FC<ActivityFormModalProps> = ({
 
             {/* Reminder fields — animates open */}
             <Animated.View style={reminderStyle}>
-              <View style={styles.timeFieldGroup}>
-                <Text style={[styles.timeFieldLabel, { color: colors.textSecondary }]}>Time</Text>
-                <View
-                  style={[
-                    styles.inputWrapper,
-                    {
-                      backgroundColor: colors.background,
-                      borderColor: reminderInvalid ? colors.danger : colors.border,
-                      marginBottom: 0,
-                    },
-                  ]}
-                >
-                  <TextInput
-                    style={[
-                      styles.input,
-                      { flex: 1, color: reminderInvalid ? colors.danger : colors.textPrimary },
-                    ]}
-                    placeholder="HH:MM"
-                    placeholderTextColor={colors.textDisabled}
-                    value={reminderTime}
-                    onChangeText={setReminderTime}
-                    keyboardType="numbers-and-punctuation"
-                    maxLength={5}
-                  />
-                  <TouchableOpacity
-                    style={[
-                      styles.amPmToggle,
-                      {
-                        backgroundColor:
-                          reminderAmPm === 'AM' ? colors.surfaceVariant : colors.primaryContainer,
-                      },
-                    ]}
-                    onPress={() => {
-                      haptics.selection();
-                      setReminderAmPm(reminderAmPm === 'AM' ? 'PM' : 'AM');
-                    }}
-                  >
-                    <Text
-                      style={[
-                        styles.amPmText,
-                        { color: reminderAmPm === 'PM' ? colors.primary : colors.textPrimary },
-                      ]}
-                    >
-                      {reminderAmPm}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
+              <View style={styles.reminderBody}>
+                <ReminderEditor
+                  draft={reminderDraft}
+                  onChange={setReminderDraft}
+                  habitName={name}
+                  fieldBackground={colors.background}
+                />
               </View>
-
-              <View style={[styles.timeFieldGroup, { marginTop: Spacing.sm }]}>
-                <Text style={[styles.timeFieldLabel, { color: colors.textSecondary }]}>
-                  Message
-                </Text>
-                <View
-                  style={[
-                    styles.inputWrapper,
-                    {
-                      backgroundColor: colors.background,
-                      borderColor: colors.border,
-                      marginBottom: 0,
-                    },
-                  ]}
-                >
-                  <TextInput
-                    style={[styles.input, { flex: 1, color: colors.textPrimary }]}
-                    placeholder={`Time for ${name.trim() || 'your habit'}`}
-                    placeholderTextColor={colors.textDisabled}
-                    value={reminderMessage}
-                    onChangeText={setReminderMessage}
-                    maxLength={120}
-                    selectionColor={colors.primary}
-                  />
-                </View>
-              </View>
-
-              {HabitAlarm && (
-                <View style={[styles.alarmRow, { marginTop: Spacing.sm }]}>
-                  <View style={styles.toggleTextWrap}>
-                    <Text style={[styles.toggleLabel, { color: colors.textPrimary }]}>
-                      Alarm style
-                    </Text>
-                    <Text style={[styles.toggleSub, { color: colors.textSecondary }]}>
-                      Rings like a real alarm until you snooze, dismiss or mark it done
-                    </Text>
-                  </View>
-                  <Switch
-                    value={reminderAlarm}
-                    onValueChange={(val) => {
-                      haptics.toggle(val);
-                      setReminderAlarm(val);
-                    }}
-                    trackColor={{ false: colors.surfaceVariant, true: colors.primaryMuted }}
-                    thumbColor={reminderAlarm ? colors.primary : colors.textSecondary}
-                  />
-                </View>
-              )}
-              {HabitAlarm && reminderAlarm && <FullScreenAlarmHint />}
-              <View style={{ height: Spacing.md }} />
             </Animated.View>
           </ScrollView>
 
@@ -1431,10 +1332,9 @@ const styles = StyleSheet.create({
     ...Typography.bodySmall,
     marginBottom: Spacing.sm,
   },
-  alarmRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
+  reminderBody: {
+    paddingTop: Spacing.xs,
+    paddingBottom: Spacing.md,
   },
   amPmToggle: {
     paddingHorizontal: Spacing.sm,

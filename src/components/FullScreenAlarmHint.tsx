@@ -53,7 +53,6 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
     padding: Spacing.sm,
     borderRadius: BorderRadius.md,
-    marginTop: Spacing.sm,
   },
   text: {
     ...Typography.caption,

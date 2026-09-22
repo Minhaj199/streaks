@@ -36,6 +36,7 @@ export const BACKFILL_QUOTA_WINDOW_DAYS = 30;
 /** Why a day cannot be fixed. Each maps to a sentence the user is shown. */
 export type BackfillBlock =
   | 'activity_completed'
+  | 'activity_unavailable'
   | 'already_logged'
   | 'not_past'
   | 'too_old'
@@ -102,7 +103,8 @@ export const getBackfillEligibility = (
     used,
   });
 
-  if (!activity || activity.completedAt) return deny('activity_completed');
+  if (!activity) return deny('activity_unavailable');
+  if (activity.completedAt) return deny('activity_completed');
   if (entries.some((entry) => entry.date === dateStr)) return deny('already_logged');
   // Today has its own log button, and tomorrow has not happened.
   if (dateStr >= today) return deny('not_past');
@@ -121,6 +123,8 @@ export const getBackfillEligibility = (
 /** The sentence shown in place of the button when a day cannot be fixed. */
 export const describeBackfillBlock = (block: BackfillBlock, used: number): string => {
   switch (block) {
+    case 'activity_unavailable':
+      return 'This habit is still loading. Try again in a moment.';
     case 'activity_completed':
       return 'This habit is finished — its history is closed.';
     case 'already_logged':

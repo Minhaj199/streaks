@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
-import { Snackbar, Text } from 'react-native-paper';
+import { Text } from 'react-native-paper';
 import { Calendar } from 'react-native-calendars';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import dayjs from 'dayjs';
@@ -24,7 +24,6 @@ export const CalendarScreen: React.FC = () => {
   const { colors, calendar: calendarColors } = useTheme();
   const [logDetailsVisible, setLogDetailsVisible] = React.useState(false);
   const [logModalDateKey, setLogModalDateKey] = React.useState('');
-  const [snackbarVisible, setSnackbarVisible] = React.useState(false);
   // The only piece of sheet state that can't be derived: it depends on the
   // wall-clock at the moment the day was tapped, not on stored data.
   const [logModalTimeBoundKind, setLogModalTimeBoundKind] = React.useState<
@@ -293,11 +292,7 @@ export const CalendarScreen: React.FC = () => {
         backfill={logModalBackfill}
         onBackfill={
           selectedActivityId && logModalDateKey
-            ? async (reason) => {
-                const done = await logMissedDay(selectedActivityId, logModalDateKey, reason);
-                if (done) setSnackbarVisible(true);
-                return done;
-              }
+            ? (reason) => logMissedDay(selectedActivityId, logModalDateKey, reason)
             : undefined
         }
         onNoteAppend={
@@ -316,13 +311,6 @@ export const CalendarScreen: React.FC = () => {
         }
         onClose={() => setLogDetailsVisible(false)}
       />
-      <Snackbar
-        visible={snackbarVisible}
-        onDismiss={() => setSnackbarVisible(false)}
-        duration={2200}
-      >
-        Habit marked as completed.
-      </Snackbar>
     </View>
   );
 };

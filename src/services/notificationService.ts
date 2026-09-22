@@ -15,6 +15,15 @@ const EVENING_MINUTE = 0;
  */
 const EVENING_SCHEDULE_DAYS = 14;
 
+/** Channel for alarm-style habit reminders. Android channels can't be changed after creation, so never repurpose this id. */
+const ALARM_CHANNEL_ID = 'habit-alarm';
+
+/**
+ * Minutes after an alarm-style reminder at which it rings again. Logging the
+ * habit reschedules everything, which drops the follow-ups still pending today.
+ */
+const ALARM_FOLLOW_UP_MINUTES = [5, 10, 15];
+
 // Configure how notifications appear when the app is in the foreground
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -33,6 +42,19 @@ export const requestPermissionsAsync = async () => {
       importance: Notifications.AndroidImportance.MAX,
       vibrationPattern: [0, 250, 250, 250],
       lightColor: '#FF231F7C',
+    });
+    await Notifications.setNotificationChannelAsync(ALARM_CHANNEL_ID, {
+      name: 'Habit alarms',
+      description: 'Alarm-style habit reminders that ring until you log',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 800, 400, 800, 400, 800],
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+      // Honoured only if the user grants Do Not Disturb access in system settings.
+      bypassDnd: true,
+      audioAttributes: {
+        usage: Notifications.AndroidAudioUsage.ALARM,
+        contentType: Notifications.AndroidAudioContentType.SONIFICATION,
+      },
     });
   }
 
@@ -78,6 +100,49 @@ const scheduleEveningReminder = async (date: Date, pending: Activity[]) => {
   });
 };
 
+/**
+ * Schedules each of `activity`'s reminders as one-shots over the same window
+ * as the evening check-in. One-shots rather than a DAILY trigger so today's
+ * can be dropped once the habit is logged — a repeating trigger would still
+ * fire after the user had already done it.
+ */
+const scheduleHabitReminders = async (activity: Activity, loggedToday: boolean, now: Date) => {
+  for (const reminder of activity.reminders ?? []) {
+    const [hour, minute] = reminder.time.split(':').map(Number);
+    if (Number.isNaN(hour) || Number.isNaN(minute)) continue;
+
+    for (let dayOffset = 0; dayOffset < EVENING_SCHEDULE_DAYS; dayOffset++) {
+      if (dayOffset === 0 && loggedToday) continue;
+
+      const baseAt = new Date(now);
+      baseAt.setDate(baseAt.getDate() + dayOffset);
+      baseAt.setHours(hour, minute, 0, 0);
+
+      const offsets = reminder.alarm ? [0, ...ALARM_FOLLOW_UP_MINUTES] : [0];
+      for (const offset of offsets) {
+        const fireAt = new Date(baseAt.getTime() + offset * 60_000);
+        if (fireAt <= now) continue;
+
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: offset === 0 ? `⏰ ${activity.name}` : `⏰ ${activity.name} — still not logged`,
+            body: reminder.message?.trim() || `Time for ${activity.name}. Keep the streak going!`,
+            data: { activityId: activity.id },
+            priority: Notifications.AndroidNotificationPriority.MAX,
+            sound: true,
+            sticky: !!reminder.alarm,
+          },
+          trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.DATE,
+            date: fireAt,
+            channelId: reminder.alarm ? ALARM_CHANNEL_ID : 'default',
+          },
+        });
+      }
+    }
+  }
+};
+
 export const rescheduleAllNotifications = async (
   activities: Activity[],
   logs: Record<string, LogEntry[]>,
@@ -112,13 +177,13 @@ export const rescheduleAllNotifications = async (
     // Use the locked .date field — no timezone parsing needed
     return !activityLogs.some((entry) => entry.date === today);
   });
+  const now = new Date();
 
   // 3. Evening reminders — exactly one per evening, each a one-shot so its body
   //    can differ per day. This function runs on every app open and on every
   //    log (useNotifications hook), so the whole window is rebuilt with fresh
   //    state each time and tonight's entry always names only what is still
   //    outstanding.
-  const now = new Date();
   for (let dayOffset = 0; dayOffset < EVENING_SCHEDULE_DAYS; dayOffset++) {
     const fireAt = new Date(now);
     fireAt.setDate(fireAt.getDate() + dayOffset);
@@ -131,5 +196,21 @@ export const rescheduleAllNotifications = async (
     // without the app being opened, and opening it rebuilds this window, so
     // every active activity is still outstanding on those days.
     await scheduleEveningReminder(fireAt, dayOffset === 0 ? unloggedToday : activeActivities);
+  }
+
+  // 4. Per-habit reminders at the times the user picked.
+  for (const activity of activeActivities) {
+    await scheduleHabitReminders(activity, !unloggedToday.includes(activity), now);
+  }
+
+  // 5. Alarm-style reminders are sticky, so one already showing would sit in
+  //    the tray after its habit got logged. Clear those out.
+  const done = new Set(activities.filter((a) => !unloggedToday.includes(a)).map((a) => a.id));
+  const presented = await Notifications.getPresentedNotificationsAsync();
+  for (const n of presented) {
+    const activityId = n.request.content.data?.activityId;
+    if (typeof activityId === 'string' && done.has(activityId)) {
+      await Notifications.dismissNotificationAsync(n.request.identifier);
+    }
   }
 };

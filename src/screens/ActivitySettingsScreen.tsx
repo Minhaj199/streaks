@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, ScrollView, Alert, TextInput, Pressable } from 'react-native';
+import { View, StyleSheet, ScrollView, Alert, TextInput, Pressable, Switch } from 'react-native';
 import { Text } from 'react-native-paper';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { FontAwesome5, Ionicons } from '@expo/vector-icons';
@@ -95,6 +95,59 @@ export const ActivitySettingsScreen: React.FC = () => {
   );
 
   const timeBoundType = selectedActivity?.timeBoundType;
+
+  const savedReminder = selectedActivity?.reminders?.[0];
+  const [reminderEnabled, setReminderEnabled] = useState(() => !!savedReminder);
+  const [reminderTime, setReminderTime] = useState(() => to12h(savedReminder?.time || '').time);
+  const [reminderAmPm, setReminderAmPm] = useState<'AM' | 'PM'>(
+    () => to12h(savedReminder?.time || '').ampm,
+  );
+  const [reminderMessage, setReminderMessage] = useState(() => savedReminder?.message ?? '');
+  const [reminderAlarm, setReminderAlarm] = useState(() => savedReminder?.alarm ?? false);
+
+  const isReminderValid = !reminderEnabled || isValidTime12h(reminderTime);
+  const reminderInvalid =
+    reminderEnabled && reminderTime.length > 0 && !isValidTime12h(reminderTime);
+
+  const hasUnsavedReminderChanges = () => {
+    if (!selectedActivity) return false;
+    if (reminderEnabled !== !!savedReminder) return true;
+    if (!reminderEnabled || !savedReminder) return false;
+    return (
+      to24h(reminderTime, reminderAmPm) !== savedReminder.time ||
+      reminderMessage.trim() !== (savedReminder.message ?? '') ||
+      reminderAlarm !== (savedReminder.alarm ?? false)
+    );
+  };
+
+  const handleSaveReminder = async () => {
+    if (!selectedActivityId || !selectedActivity) return;
+    if (!isReminderValid) return haptics.warning();
+
+    haptics.success();
+    await editActivity(
+      selectedActivityId,
+      selectedActivity.name,
+      selectedActivity.description,
+      selectedActivity.requiresNote,
+      selectedActivity.weeklyGoal,
+      selectedActivity.taskSequence,
+      selectedActivity.sequenceStartDate,
+      selectedActivity.sequenceMode,
+      undefined,
+      undefined,
+      undefined,
+      reminderEnabled
+        ? [
+            {
+              time: to24h(reminderTime, reminderAmPm),
+              ...(reminderMessage.trim() ? { message: reminderMessage.trim() } : {}),
+              ...(reminderAlarm ? { alarm: true } : {}),
+            },
+          ]
+        : [],
+    );
+  };
 
   const isTimeOrderValid =
     !timeBoundType ||
@@ -427,6 +480,119 @@ export const ActivitySettingsScreen: React.FC = () => {
         </Animated.View>
       )}
 
+      {/* Reminder */}
+      {!isCompleted && (
+        <Animated.View entering={FadeInDown.delay(130).springify()} style={styles.section}>
+          <SectionHeading
+            icon="bell"
+            title="Reminder"
+            subtitle="A daily nudge at a set time, skipped once you've logged"
+            tint={colors.primary}
+          />
+          <Card elevation="low">
+            <View style={styles.switchRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.switchLabel, { color: colors.textPrimary }]}>Remind me</Text>
+              </View>
+              <Switch
+                value={reminderEnabled}
+                onValueChange={(val) => {
+                  haptics.toggle(val);
+                  setReminderEnabled(val);
+                }}
+                trackColor={{ false: colors.surfaceVariant, true: colors.primaryMuted }}
+                thumbColor={reminderEnabled ? colors.primary : colors.textSecondary}
+                accessibilityLabel="Remind me"
+              />
+            </View>
+
+            {reminderEnabled && (
+              <>
+                {timeField(
+                  'Time',
+                  reminderTime,
+                  setReminderTime,
+                  reminderAmPm,
+                  () => setReminderAmPm(reminderAmPm === 'AM' ? 'PM' : 'AM'),
+                  reminderInvalid,
+                )}
+
+                <View style={styles.timeField}>
+                  <Text style={[styles.timeLabel, { color: colors.textTertiary }]}>Message</Text>
+                  <View
+                    style={[
+                      styles.inputWrapper,
+                      { backgroundColor: colors.surfaceSunken, borderColor: colors.border },
+                    ]}
+                  >
+                    <TextInput
+                      style={[styles.input, { color: colors.textPrimary }]}
+                      placeholder={`Time for ${selectedActivity.name}`}
+                      placeholderTextColor={colors.textDisabled}
+                      value={reminderMessage}
+                      onChangeText={setReminderMessage}
+                      maxLength={120}
+                      accessibilityLabel="Reminder message"
+                    />
+                  </View>
+                </View>
+
+                <View style={styles.switchRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.switchLabel, { color: colors.textPrimary }]}>
+                      Alarm style
+                    </Text>
+                    <Text style={[styles.switchSub, { color: colors.textTertiary }]}>
+                      Rings at alarm volume, stays put, repeats every 5 min until logged
+                    </Text>
+                  </View>
+                  <Switch
+                    value={reminderAlarm}
+                    onValueChange={(val) => {
+                      haptics.toggle(val);
+                      setReminderAlarm(val);
+                    }}
+                    trackColor={{ false: colors.surfaceVariant, true: colors.primaryMuted }}
+                    thumbColor={reminderAlarm ? colors.primary : colors.textSecondary}
+                    accessibilityLabel="Alarm style"
+                  />
+                </View>
+              </>
+            )}
+
+            {hasUnsavedReminderChanges() && (
+              <Animated.View entering={FadeInDown.springify()} style={styles.saveRow}>
+                <Chip label="Unsaved changes" icon="pen" tone="warning" />
+                <PressableScale
+                  onPress={handleSaveReminder}
+                  disabled={!isReminderValid}
+                  haptic={false}
+                  scaleTo={0.95}
+                  style={[
+                    styles.saveBtn,
+                    {
+                      backgroundColor: isReminderValid ? colors.primary : colors.surfaceVariant,
+                    },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Save reminder"
+                  accessibilityState={{ disabled: !isReminderValid }}
+                >
+                  <Text
+                    style={[
+                      styles.saveBtnText,
+                      { color: isReminderValid ? colors.onPrimary : colors.textDisabled },
+                    ]}
+                  >
+                    Save
+                  </Text>
+                </PressableScale>
+              </Animated.View>
+            )}
+          </Card>
+        </Animated.View>
+      )}
+
       {/* Complete */}
       {!isCompleted && selectedActivity.activityType !== 'goal' && (
         <Animated.View entering={FadeInDown.delay(150).springify()} style={styles.section}>
@@ -593,6 +759,19 @@ const styles = StyleSheet.create({
   errorText: {
     ...Typography.caption,
     flex: 1,
+  },
+  switchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    marginBottom: Spacing.md - 4,
+  },
+  switchLabel: {
+    ...Typography.labelLarge,
+  },
+  switchSub: {
+    ...Typography.caption,
+    marginTop: 2,
   },
   saveRow: {
     flexDirection: 'row',

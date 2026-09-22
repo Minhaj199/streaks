@@ -26,7 +26,7 @@ import { Typography, Spacing, BorderRadius, HitSlop, alpha } from '../constants'
 import { FontAwesome5 } from '@expo/vector-icons';
 import { useTheme } from '../hooks/useTheme';
 import { TaskSequenceEditor } from './TaskSequenceEditor';
-import { SequenceTask } from '../features/attendance/attendanceService';
+import { HabitReminder, SequenceTask } from '../features/attendance/attendanceService';
 import { to12h, to24h, isValidTime12h } from '../utils/dateUtils';
 import { haptics } from '../utils/haptics';
 
@@ -44,6 +44,7 @@ export interface ActivityFormModalProps {
   initialTimeBoundEndTime?: string;
   initialActivityType?: 'goal' | 'endless';
   initialStreakGoal?: number;
+  initialReminder?: HabitReminder;
   onClose: () => void;
   onSave: (
     name: string,
@@ -57,6 +58,7 @@ export interface ActivityFormModalProps {
     timeBoundEndTime?: string | null,
     activityType?: 'goal' | 'endless',
     streakGoal?: number,
+    reminders?: HabitReminder[],
   ) => void;
 }
 
@@ -76,6 +78,7 @@ export const ActivityFormModal: React.FC<ActivityFormModalProps> = ({
   initialTimeBoundEndTime,
   initialActivityType,
   initialStreakGoal,
+  initialReminder,
   onClose,
   onSave,
 }) => {
@@ -101,6 +104,12 @@ export const ActivityFormModal: React.FC<ActivityFormModalProps> = ({
   const [timeBoundEndTime, setTimeBoundEndTime] = useState('');
   const [endAmPm, setEndAmPm] = useState<'AM' | 'PM'>('AM');
 
+  const [reminderEnabled, setReminderEnabled] = useState(false);
+  const [reminderTime, setReminderTime] = useState('');
+  const [reminderAmPm, setReminderAmPm] = useState<'AM' | 'PM'>('AM');
+  const [reminderMessage, setReminderMessage] = useState('');
+  const [reminderAlarm, setReminderAlarm] = useState(false);
+
   const inputRef = useRef<TextInput>(null);
 
   const pickerHeight = useSharedValue(0);
@@ -109,6 +118,8 @@ export const ActivityFormModal: React.FC<ActivityFormModalProps> = ({
   const taskSeqOpacity = useSharedValue(0);
   const timeBoundHeight = useSharedValue(0);
   const timeBoundOpacity = useSharedValue(0);
+  const reminderHeight = useSharedValue(0);
+  const reminderOpacity = useSharedValue(0);
 
   const pickerStyle = useAnimatedStyle(() => ({
     height: pickerHeight.value,
@@ -125,6 +136,12 @@ export const ActivityFormModal: React.FC<ActivityFormModalProps> = ({
   const timeBoundStyle = useAnimatedStyle(() => ({
     maxHeight: timeBoundHeight.value,
     opacity: timeBoundOpacity.value,
+    overflow: 'hidden',
+  }));
+
+  const reminderStyle = useAnimatedStyle(() => ({
+    maxHeight: reminderHeight.value,
+    opacity: reminderOpacity.value,
     overflow: 'hidden',
   }));
 
@@ -159,6 +176,14 @@ export const ActivityFormModal: React.FC<ActivityFormModalProps> = ({
       setTimeBoundEndTime(end12.time);
       setEndAmPm(end12.ampm);
 
+      const hasReminder = !!initialReminder;
+      setReminderEnabled(hasReminder);
+      const reminder12 = to12h(initialReminder?.time ?? '');
+      setReminderTime(reminder12.time);
+      setReminderAmPm(reminder12.ampm);
+      setReminderMessage(initialReminder?.message ?? '');
+      setReminderAlarm(initialReminder?.alarm ?? false);
+
       // Animate pickers to correct state immediately (no animation on open)
       pickerHeight.value = hasGoal ? 60 : 0;
       pickerOpacity.value = hasGoal ? 1 : 0;
@@ -166,6 +191,8 @@ export const ActivityFormModal: React.FC<ActivityFormModalProps> = ({
       taskSeqOpacity.value = hasTasks ? 1 : 0;
       timeBoundHeight.value = hasTimeBound ? 320 : 0;
       timeBoundOpacity.value = hasTimeBound ? 1 : 0;
+      reminderHeight.value = hasReminder ? 320 : 0;
+      reminderOpacity.value = hasReminder ? 1 : 0;
     }
   }, [
     visible,
@@ -180,6 +207,7 @@ export const ActivityFormModal: React.FC<ActivityFormModalProps> = ({
     initialTimeBoundEndTime,
     initialActivityType,
     initialStreakGoal,
+    initialReminder,
   ]);
 
   const handleWeeklyToggle = (val: boolean) => {
@@ -202,6 +230,13 @@ export const ActivityFormModal: React.FC<ActivityFormModalProps> = ({
     setTimeBoundEnabled(val);
     timeBoundHeight.value = withTiming(val ? 320 : 0, { duration: 300 });
     timeBoundOpacity.value = withTiming(val ? 1 : 0, { duration: 250 });
+  };
+
+  const handleReminderToggle = (val: boolean) => {
+    haptics.toggle(val);
+    setReminderEnabled(val);
+    reminderHeight.value = withTiming(val ? 320 : 0, { duration: 300 });
+    reminderOpacity.value = withTiming(val ? 1 : 0, { duration: 250 });
   };
 
   /**
@@ -260,6 +295,15 @@ export const ActivityFormModal: React.FC<ActivityFormModalProps> = ({
       timeBoundEnabled && timeBoundType === 'between' ? to24h(timeBoundEndTime, endAmPm) : null,
       activityType,
       activityType === 'goal' ? streakGoal : undefined,
+      reminderEnabled
+        ? [
+            {
+              time: to24h(reminderTime, reminderAmPm),
+              ...(reminderMessage.trim() ? { message: reminderMessage.trim() } : {}),
+              ...(reminderAlarm ? { alarm: true } : {}),
+            },
+          ]
+        : [],
     );
   };
 
@@ -279,7 +323,10 @@ export const ActivityFormModal: React.FC<ActivityFormModalProps> = ({
       : isValidTime12h(timeBoundStartTime));
 
   const isStreakGoalValid = activityType !== 'goal' || streakGoal >= 1;
-  const canSave = name.trim().length > 0 && isTimeValid && isStreakGoalValid;
+  const isReminderValid = !reminderEnabled || isValidTime12h(reminderTime);
+  const canSave = name.trim().length > 0 && isTimeValid && isStreakGoalValid && isReminderValid;
+  const reminderInvalid =
+    reminderEnabled && reminderTime.length > 0 && !isValidTime12h(reminderTime);
 
   const timeOrderInvalid =
     timeBoundEnabled &&
@@ -998,6 +1045,146 @@ export const ActivityFormModal: React.FC<ActivityFormModalProps> = ({
               )}
               <View style={{ height: Spacing.md }} />
             </Animated.View>
+
+            {/* ── Reminder toggle ─────────────────────────────────────────── */}
+            <View
+              style={[
+                styles.toggleRow,
+                {
+                  backgroundColor: reminderEnabled ? colors.primarySubtle : colors.background,
+                  borderColor: reminderEnabled ? colors.primary : colors.border,
+                  marginBottom: Spacing.sm,
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.toggleIconWrap,
+                  {
+                    backgroundColor: reminderEnabled ? colors.primaryMuted : colors.surfaceVariant,
+                  },
+                ]}
+              >
+                <FontAwesome5
+                  name="bell"
+                  size={13}
+                  color={reminderEnabled ? colors.primary : colors.textSecondary}
+                />
+              </View>
+              <View style={styles.toggleTextWrap}>
+                <Text style={[styles.toggleLabel, { color: colors.textPrimary }]}>Reminder</Text>
+                <Text style={[styles.toggleSub, { color: colors.textSecondary }]}>
+                  {reminderEnabled && isValidTime12h(reminderTime)
+                    ? `${reminderAlarm ? 'Alarm' : 'Daily'} at ${reminderTime} ${reminderAmPm}, unless already logged`
+                    : 'Get a notification at a set time'}
+                </Text>
+              </View>
+              <Switch
+                value={reminderEnabled}
+                onValueChange={handleReminderToggle}
+                trackColor={{ false: colors.surfaceVariant, true: colors.primaryMuted }}
+                thumbColor={reminderEnabled ? colors.primary : colors.textSecondary}
+              />
+            </View>
+
+            {/* Reminder fields — animates open */}
+            <Animated.View style={reminderStyle}>
+              <View style={styles.timeFieldGroup}>
+                <Text style={[styles.timeFieldLabel, { color: colors.textSecondary }]}>Time</Text>
+                <View
+                  style={[
+                    styles.inputWrapper,
+                    {
+                      backgroundColor: colors.background,
+                      borderColor: reminderInvalid ? colors.danger : colors.border,
+                      marginBottom: 0,
+                    },
+                  ]}
+                >
+                  <TextInput
+                    style={[
+                      styles.input,
+                      { flex: 1, color: reminderInvalid ? colors.danger : colors.textPrimary },
+                    ]}
+                    placeholder="HH:MM"
+                    placeholderTextColor={colors.textDisabled}
+                    value={reminderTime}
+                    onChangeText={setReminderTime}
+                    keyboardType="numbers-and-punctuation"
+                    maxLength={5}
+                  />
+                  <TouchableOpacity
+                    style={[
+                      styles.amPmToggle,
+                      {
+                        backgroundColor:
+                          reminderAmPm === 'AM' ? colors.surfaceVariant : colors.primaryContainer,
+                      },
+                    ]}
+                    onPress={() => {
+                      haptics.selection();
+                      setReminderAmPm(reminderAmPm === 'AM' ? 'PM' : 'AM');
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.amPmText,
+                        { color: reminderAmPm === 'PM' ? colors.primary : colors.textPrimary },
+                      ]}
+                    >
+                      {reminderAmPm}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <View style={[styles.timeFieldGroup, { marginTop: Spacing.sm }]}>
+                <Text style={[styles.timeFieldLabel, { color: colors.textSecondary }]}>
+                  Message
+                </Text>
+                <View
+                  style={[
+                    styles.inputWrapper,
+                    {
+                      backgroundColor: colors.background,
+                      borderColor: colors.border,
+                      marginBottom: 0,
+                    },
+                  ]}
+                >
+                  <TextInput
+                    style={[styles.input, { flex: 1, color: colors.textPrimary }]}
+                    placeholder={`Time for ${name.trim() || 'your habit'}`}
+                    placeholderTextColor={colors.textDisabled}
+                    value={reminderMessage}
+                    onChangeText={setReminderMessage}
+                    maxLength={120}
+                    selectionColor={colors.primary}
+                  />
+                </View>
+              </View>
+
+              <View style={[styles.alarmRow, { marginTop: Spacing.sm }]}>
+                <View style={styles.toggleTextWrap}>
+                  <Text style={[styles.toggleLabel, { color: colors.textPrimary }]}>
+                    Alarm style
+                  </Text>
+                  <Text style={[styles.toggleSub, { color: colors.textSecondary }]}>
+                    Rings at alarm volume, stays put, repeats every 5 min until logged
+                  </Text>
+                </View>
+                <Switch
+                  value={reminderAlarm}
+                  onValueChange={(val) => {
+                    haptics.toggle(val);
+                    setReminderAlarm(val);
+                  }}
+                  trackColor={{ false: colors.surfaceVariant, true: colors.primaryMuted }}
+                  thumbColor={reminderAlarm ? colors.primary : colors.textSecondary}
+                />
+              </View>
+              <View style={{ height: Spacing.md }} />
+            </Animated.View>
           </ScrollView>
 
           {/* Actions */}
@@ -1238,6 +1425,11 @@ const styles = StyleSheet.create({
   modeHint: {
     ...Typography.bodySmall,
     marginBottom: Spacing.sm,
+  },
+  alarmRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
   },
   amPmToggle: {
     paddingHorizontal: Spacing.sm,

@@ -26,6 +26,8 @@ import { Typography, Spacing, BorderRadius, HitSlop, alpha } from '../constants'
 import { FontAwesome5 } from '@expo/vector-icons';
 import { useTheme } from '../hooks/useTheme';
 import { TaskSequenceEditor } from './TaskSequenceEditor';
+import { FullScreenAlarmHint } from './FullScreenAlarmHint';
+import { HabitAlarm } from '../../modules/habit-alarm';
 import { HabitReminder, SequenceTask } from '../features/attendance/attendanceService';
 import { to12h, to24h, isValidTime12h } from '../utils/dateUtils';
 import { haptics } from '../utils/haptics';
@@ -191,7 +193,7 @@ export const ActivityFormModal: React.FC<ActivityFormModalProps> = ({
       taskSeqOpacity.value = hasTasks ? 1 : 0;
       timeBoundHeight.value = hasTimeBound ? 320 : 0;
       timeBoundOpacity.value = hasTimeBound ? 1 : 0;
-      reminderHeight.value = hasReminder ? 320 : 0;
+      reminderHeight.value = hasReminder ? 400 : 0;
       reminderOpacity.value = hasReminder ? 1 : 0;
     }
   }, [
@@ -235,7 +237,7 @@ export const ActivityFormModal: React.FC<ActivityFormModalProps> = ({
   const handleReminderToggle = (val: boolean) => {
     haptics.toggle(val);
     setReminderEnabled(val);
-    reminderHeight.value = withTiming(val ? 320 : 0, { duration: 300 });
+    reminderHeight.value = withTiming(val ? 400 : 0, { duration: 300 });
     reminderOpacity.value = withTiming(val ? 1 : 0, { duration: 250 });
   };
 
@@ -1164,25 +1166,28 @@ export const ActivityFormModal: React.FC<ActivityFormModalProps> = ({
                 </View>
               </View>
 
-              <View style={[styles.alarmRow, { marginTop: Spacing.sm }]}>
-                <View style={styles.toggleTextWrap}>
-                  <Text style={[styles.toggleLabel, { color: colors.textPrimary }]}>
-                    Alarm style
-                  </Text>
-                  <Text style={[styles.toggleSub, { color: colors.textSecondary }]}>
-                    Rings at alarm volume, stays put, repeats every 5 min until logged
-                  </Text>
+              {HabitAlarm && (
+                <View style={[styles.alarmRow, { marginTop: Spacing.sm }]}>
+                  <View style={styles.toggleTextWrap}>
+                    <Text style={[styles.toggleLabel, { color: colors.textPrimary }]}>
+                      Alarm style
+                    </Text>
+                    <Text style={[styles.toggleSub, { color: colors.textSecondary }]}>
+                      Rings like a real alarm until you snooze, dismiss or mark it done
+                    </Text>
+                  </View>
+                  <Switch
+                    value={reminderAlarm}
+                    onValueChange={(val) => {
+                      haptics.toggle(val);
+                      setReminderAlarm(val);
+                    }}
+                    trackColor={{ false: colors.surfaceVariant, true: colors.primaryMuted }}
+                    thumbColor={reminderAlarm ? colors.primary : colors.textSecondary}
+                  />
                 </View>
-                <Switch
-                  value={reminderAlarm}
-                  onValueChange={(val) => {
-                    haptics.toggle(val);
-                    setReminderAlarm(val);
-                  }}
-                  trackColor={{ false: colors.surfaceVariant, true: colors.primaryMuted }}
-                  thumbColor={reminderAlarm ? colors.primary : colors.textSecondary}
-                />
-              </View>
+              )}
+              {HabitAlarm && reminderAlarm && <FullScreenAlarmHint />}
               <View style={{ height: Spacing.md }} />
             </Animated.View>
           </ScrollView>

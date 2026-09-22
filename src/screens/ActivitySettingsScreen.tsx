@@ -5,6 +5,8 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { FontAwesome5, Ionicons } from '@expo/vector-icons';
 import { useAttendanceStore, SequenceTask } from '../store/attendanceStore';
 import { TaskSequenceEditor } from '../components/TaskSequenceEditor';
+import { FullScreenAlarmHint } from '../components/FullScreenAlarmHint';
+import { HabitAlarm } from '../../modules/habit-alarm';
 import { Spacing, Typography, BorderRadius, ScreenPadding, alpha } from '../constants';
 import { useTheme } from '../hooks/useTheme';
 import { to12h, to24h, isValidTime12h, todayStr, formatTime12h } from '../utils/dateUtils';
@@ -537,26 +539,29 @@ export const ActivitySettingsScreen: React.FC = () => {
                   </View>
                 </View>
 
-                <View style={styles.switchRow}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.switchLabel, { color: colors.textPrimary }]}>
-                      Alarm style
-                    </Text>
-                    <Text style={[styles.switchSub, { color: colors.textTertiary }]}>
-                      Rings at alarm volume, stays put, repeats every 5 min until logged
-                    </Text>
+                {HabitAlarm && (
+                  <View style={styles.switchRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.switchLabel, { color: colors.textPrimary }]}>
+                        Alarm style
+                      </Text>
+                      <Text style={[styles.switchSub, { color: colors.textTertiary }]}>
+                        Rings like a real alarm until you snooze, dismiss or mark it done
+                      </Text>
+                    </View>
+                    <Switch
+                      value={reminderAlarm}
+                      onValueChange={(val) => {
+                        haptics.toggle(val);
+                        setReminderAlarm(val);
+                      }}
+                      trackColor={{ false: colors.surfaceVariant, true: colors.primaryMuted }}
+                      thumbColor={reminderAlarm ? colors.primary : colors.textSecondary}
+                      accessibilityLabel="Alarm style"
+                    />
                   </View>
-                  <Switch
-                    value={reminderAlarm}
-                    onValueChange={(val) => {
-                      haptics.toggle(val);
-                      setReminderAlarm(val);
-                    }}
-                    trackColor={{ false: colors.surfaceVariant, true: colors.primaryMuted }}
-                    thumbColor={reminderAlarm ? colors.primary : colors.textSecondary}
-                    accessibilityLabel="Alarm style"
-                  />
-                </View>
+                )}
+                {HabitAlarm && reminderAlarm && <FullScreenAlarmHint />}
               </>
             )}
 

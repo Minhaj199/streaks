@@ -14,6 +14,7 @@ const EVENING_MINUTE = 0;
  * only has to cover a stretch of days where the app is never launched.
  */
 const EVENING_SCHEDULE_DAYS = 14;
+const HABIT_REMINDER_DAYS = 14;
 
 // Configure how notifications appear when the app is in the foreground
 Notifications.setNotificationHandler({
@@ -78,6 +79,23 @@ const scheduleEveningReminder = async (date: Date, pending: Activity[]) => {
   });
 };
 
+const scheduleHabitReminder = async (activity: Activity, date: Date) => {
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: activity.name,
+      body: activity.reminderMessage || `Did you complete ${activity.name}?`,
+      data: { activityId: activity.id },
+      priority: Notifications.AndroidNotificationPriority.MAX,
+      sound: true,
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.DATE,
+      date,
+      channelId: 'default',
+    },
+  });
+};
+
 export const rescheduleAllNotifications = async (
   activities: Activity[],
   logs: Record<string, LogEntry[]>,
@@ -131,5 +149,23 @@ export const rescheduleAllNotifications = async (
     // without the app being opened, and opening it rebuilds this window, so
     // every active activity is still outstanding on those days.
     await scheduleEveningReminder(fireAt, dayOffset === 0 ? unloggedToday : activeActivities);
+  }
+
+  // Habit reminders are one-shot notifications so today's already-completed
+  // habits can be omitted. The window is rebuilt whenever logs or settings
+  // change, preventing stale or duplicate schedules.
+  for (const activity of activeActivities) {
+    if (!activity.reminderEnabled || !activity.reminderTime) continue;
+    const [hour, minute] = activity.reminderTime.split(':').map(Number);
+    if (!Number.isInteger(hour) || !Number.isInteger(minute)) continue;
+
+    const isLoggedToday = (logs[activity.id] ?? []).some((entry) => entry.date === today);
+    for (let dayOffset = 0; dayOffset < HABIT_REMINDER_DAYS; dayOffset++) {
+      const fireAt = new Date(now);
+      fireAt.setDate(fireAt.getDate() + dayOffset);
+      fireAt.setHours(hour, minute, 0, 0);
+      if (fireAt <= now || (dayOffset === 0 && isLoggedToday)) continue;
+      await scheduleHabitReminder(activity, fireAt);
+    }
   }
 };

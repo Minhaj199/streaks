@@ -86,6 +86,12 @@ interface AttendanceState {
   deleteActivities: (ids: string[]) => Promise<void>;
   selectActivity: (id: string) => void;
   completeActivity: (id: string) => Promise<void>;
+  updateReminder: (
+    id: string,
+    enabled: boolean,
+    time?: string | null,
+    message?: string | null,
+  ) => Promise<void>;
   /** Bulk complete. Same single-pass guarantee as `deleteActivities`. */
   completeActivities: (ids: string[]) => Promise<void>;
   setConfettiEnabled: (enabled: boolean) => Promise<void>;
@@ -373,6 +379,21 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
     const updatedActivities = activities.map((a) =>
       target.has(a.id) && !a.completedAt ? { ...a, completedAt } : a,
     );
+    await attendanceService.saveActivities(updatedActivities);
+    set({ activities: updatedActivities });
+  },
+
+  updateReminder: async (id, enabled, time, message) => {
+    const { activities } = get();
+    const updatedActivities = activities.map((activity) => {
+      if (activity.id !== id) return activity;
+      const updated = { ...activity, reminderEnabled: enabled };
+      if (time) updated.reminderTime = time;
+      else delete updated.reminderTime;
+      if (message?.trim()) updated.reminderMessage = message.trim();
+      else delete updated.reminderMessage;
+      return updated;
+    });
     await attendanceService.saveActivities(updatedActivities);
     set({ activities: updatedActivities });
   },

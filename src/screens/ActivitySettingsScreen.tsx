@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, ScrollView, Alert, TextInput, Pressable } from 'react-native';
+import { View, StyleSheet, ScrollView, Alert, TextInput, Pressable, Switch } from 'react-native';
 import { Text } from 'react-native-paper';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { FontAwesome5, Ionicons } from '@expo/vector-icons';
@@ -76,10 +76,21 @@ export const ActivitySettingsScreen: React.FC = () => {
     resetActivityData,
     appendNote,
     completeActivity,
+    updateReminder,
   } = useAttendanceStore();
 
   const selectedActivity = activities.find((a) => a.id === selectedActivityId);
   const isCompleted = !!selectedActivity?.completedAt;
+  const [reminderEnabled, setReminderEnabled] = useState(() => !!selectedActivity?.reminderEnabled);
+  const [reminderTime, setReminderTime] = useState(
+    () => to12h(selectedActivity?.reminderTime || '').time,
+  );
+  const [reminderAmPm, setReminderAmPm] = useState<'AM' | 'PM'>(
+    () => to12h(selectedActivity?.reminderTime || '').ampm,
+  );
+  const [reminderMessage, setReminderMessage] = useState(
+    () => selectedActivity?.reminderMessage || '',
+  );
 
   const [timeBoundStartTime, setTimeBoundStartTime] = useState(
     () => to12h(selectedActivity?.timeBoundStartTime || '').time,
@@ -173,6 +184,22 @@ export const ActivitySettingsScreen: React.FC = () => {
       newEnd ?? undefined,
     );
     await appendNote(selectedActivityId, todayStr(), noteText);
+  };
+
+  const handleSaveReminder = async () => {
+    if (!selectedActivityId || !selectedActivity) return;
+    const reminderTime24 = to24h(reminderTime, reminderAmPm);
+    if (reminderEnabled && !isValidTime12h(reminderTime)) {
+      haptics.warning();
+      return;
+    }
+    await updateReminder(
+      selectedActivityId,
+      reminderEnabled,
+      reminderEnabled ? reminderTime24 : null,
+      reminderMessage,
+    );
+    haptics.success();
   };
 
   const handleTaskSequenceChange = (newTasks: SequenceTask[]) => {
@@ -427,6 +454,99 @@ export const ActivitySettingsScreen: React.FC = () => {
         </Animated.View>
       )}
 
+      {/* Reminder */}
+      {!isCompleted && (
+        <Animated.View entering={FadeInDown.delay(130).springify()} style={styles.section}>
+          <SectionHeading
+            icon="bell"
+            title="Reminder"
+            subtitle="A private daily nudge for this habit"
+            tint={colors.accent}
+          />
+          <Card elevation="low">
+            <View style={styles.reminderToggleRow}>
+              <Text style={[styles.actionLabel, { color: colors.textPrimary }]}>Reminder</Text>
+              <Switch
+                value={reminderEnabled}
+                onValueChange={(value) => {
+                  haptics.toggle(value);
+                  setReminderEnabled(value);
+                }}
+                trackColor={{ false: colors.surfaceVariant, true: alpha(colors.accent, 0.45) }}
+                thumbColor={reminderEnabled ? colors.accent : colors.textDisabled}
+                accessibilityLabel="Enable habit reminder"
+              />
+            </View>
+            {reminderEnabled && (
+              <>
+                <View style={styles.timeField}>
+                  <Text style={[styles.timeLabel, { color: colors.textTertiary }]}>Time</Text>
+                  <View
+                    style={[
+                      styles.inputWrapper,
+                      { backgroundColor: colors.surfaceSunken, borderColor: colors.border },
+                    ]}
+                  >
+                    <TextInput
+                      style={[styles.input, { color: colors.textPrimary }]}
+                      placeholder="HH:MM"
+                      placeholderTextColor={colors.textDisabled}
+                      value={reminderTime}
+                      onChangeText={setReminderTime}
+                      keyboardType="numbers-and-punctuation"
+                      maxLength={5}
+                      accessibilityLabel="Reminder time"
+                    />
+                    <Pressable
+                      style={[
+                        styles.amPmToggle,
+                        { backgroundColor: colors.surface, borderColor: colors.border },
+                      ]}
+                      onPress={() => setReminderAmPm(reminderAmPm === 'AM' ? 'PM' : 'AM')}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Switch to ${reminderAmPm === 'AM' ? 'PM' : 'AM'}`}
+                    >
+                      <Text style={[styles.amPmText, { color: colors.primary }]}>
+                        {reminderAmPm}
+                      </Text>
+                    </Pressable>
+                  </View>
+                </View>
+                <Text style={[styles.timeLabel, { color: colors.textTertiary }]}>Message</Text>
+                <TextInput
+                  style={[
+                    styles.messageInput,
+                    {
+                      color: colors.textPrimary,
+                      backgroundColor: colors.surfaceSunken,
+                      borderColor: colors.border,
+                    },
+                  ]}
+                  value={reminderMessage}
+                  onChangeText={setReminderMessage}
+                  placeholder={`Did you complete ${selectedActivity.name}?`}
+                  placeholderTextColor={colors.textDisabled}
+                  multiline
+                  maxLength={160}
+                  accessibilityLabel="Reminder message"
+                />
+              </>
+            )}
+            <PressableScale
+              onPress={handleSaveReminder}
+              style={[
+                styles.saveBtn,
+                { backgroundColor: colors.primary, alignSelf: 'flex-end', marginTop: Spacing.md },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Save reminder"
+            >
+              <Text style={[styles.saveBtnText, { color: colors.onPrimary }]}>Save</Text>
+            </PressableScale>
+          </Card>
+        </Animated.View>
+      )}
+
       {/* Complete */}
       {!isCompleted && selectedActivity.activityType !== 'goal' && (
         <Animated.View entering={FadeInDown.delay(150).springify()} style={styles.section}>
@@ -608,5 +728,21 @@ const styles = StyleSheet.create({
   saveBtnText: {
     ...Typography.labelLarge,
     fontWeight: '700',
+  },
+  reminderToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: Spacing.md,
+  },
+  messageInput: {
+    ...Typography.bodyMedium,
+    minHeight: 76,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: BorderRadius.md,
+    paddingHorizontal: Spacing.sm + 2,
+    paddingVertical: Spacing.sm,
+    textAlignVertical: 'top',
+    marginTop: 6,
   },
 });

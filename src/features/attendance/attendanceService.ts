@@ -74,6 +74,11 @@ export interface Activity {
    * Presence of this field means the activity is in the Completed state.
    */
   completedAt?: number;
+
+  /** Optional daily reminder configured for this habit. */
+  reminderEnabled?: boolean;
+  reminderTime?: string; // e.g. "22:00"
+  reminderMessage?: string;
 }
 
 /**

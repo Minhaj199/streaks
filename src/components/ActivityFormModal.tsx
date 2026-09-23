@@ -43,6 +43,9 @@ export interface ActivityFormModalProps {
   initialName: string;
   initialDescription?: string;
   initialRequiresNote?: boolean;
+  initialProgressTrackingEnabled?: boolean;
+  initialMetricName?: string;
+  initialUnit?: string;
   initialWeeklyGoal?: number;
   initialTaskSequence?: SequenceTask[];
   initialSequenceMode?: 'calendar' | 'log';
@@ -57,6 +60,9 @@ export interface ActivityFormModalProps {
     name: string,
     description: string,
     requiresNote: boolean,
+    progressTrackingEnabled?: boolean,
+    metricName?: string,
+    unit?: string,
     weeklyGoal?: number,
     taskSequence?: SequenceTask[],
     sequenceMode?: 'calendar' | 'log',
@@ -80,6 +86,9 @@ export const ActivityFormModal: React.FC<ActivityFormModalProps> = ({
   initialName,
   initialDescription = '',
   initialRequiresNote = false,
+  initialProgressTrackingEnabled = false,
+  initialMetricName = '',
+  initialUnit = '',
   initialWeeklyGoal,
   initialTaskSequence,
   initialSequenceMode,
@@ -98,6 +107,9 @@ export const ActivityFormModal: React.FC<ActivityFormModalProps> = ({
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [requiresNote, setRequiresNote] = useState(false);
+  const [progressTrackingEnabled, setProgressTrackingEnabled] = useState(false);
+  const [metricName, setMetricName] = useState('');
+  const [unit, setUnit] = useState('');
   const [weeklyModeEnabled, setWeeklyModeEnabled] = useState(false);
   const [weeklyGoal, setWeeklyGoal] = useState(3);
   const [taskSeqEnabled, setTaskSeqEnabled] = useState(false);
@@ -157,6 +169,9 @@ export const ActivityFormModal: React.FC<ActivityFormModalProps> = ({
       setName(initialName);
       setDescription(initialDescription);
       setRequiresNote(initialRequiresNote);
+      setProgressTrackingEnabled(initialProgressTrackingEnabled);
+      setMetricName(initialMetricName ?? '');
+      setUnit(initialUnit ?? '');
       const hasGoal = !!initialWeeklyGoal && initialWeeklyGoal > 0;
       setWeeklyModeEnabled(hasGoal);
       setWeeklyGoal(initialWeeklyGoal && initialWeeklyGoal > 0 ? initialWeeklyGoal : 3);
@@ -202,6 +217,9 @@ export const ActivityFormModal: React.FC<ActivityFormModalProps> = ({
     initialName,
     initialDescription,
     initialRequiresNote,
+    initialProgressTrackingEnabled,
+    initialMetricName,
+    initialUnit,
     initialWeeklyGoal,
     initialTaskSequence,
     initialSequenceMode,
@@ -285,11 +303,17 @@ export const ActivityFormModal: React.FC<ActivityFormModalProps> = ({
     // Guards double as the validity check, so anything past them is a real save.
     if (!name.trim()) return haptics.warning();
     if (activityType === 'goal' && (!streakGoal || streakGoal < 1)) return haptics.warning();
+    if (progressTrackingEnabled) {
+      if (!metricName.trim() || !unit.trim()) return haptics.warning();
+    }
     haptics.success();
     onSave(
       name.trim(),
       description.trim(),
       requiresNote,
+      progressTrackingEnabled,
+      progressTrackingEnabled ? metricName.trim() : undefined,
+      progressTrackingEnabled ? unit.trim() : undefined,
       weeklyModeEnabled ? weeklyGoal : undefined,
       taskSeqEnabled && tasks.length > 0 ? tasks : [],
       taskSeqEnabled && tasks.length > 0 ? sequenceMode : undefined,
@@ -319,7 +343,13 @@ export const ActivityFormModal: React.FC<ActivityFormModalProps> = ({
 
   const isStreakGoalValid = activityType !== 'goal' || streakGoal >= 1;
   const isReminderValid = !reminderEnabled || isReminderDraftValid(reminderDraft);
-  const canSave = name.trim().length > 0 && isTimeValid && isStreakGoalValid && isReminderValid;
+  const isProgressValid = !progressTrackingEnabled || (!!metricName.trim() && !!unit.trim());
+  const canSave =
+    name.trim().length > 0 &&
+    isTimeValid &&
+    isStreakGoalValid &&
+    isReminderValid &&
+    isProgressValid;
 
   const timeOrderInvalid =
     timeBoundEnabled &&
@@ -745,6 +775,107 @@ export const ActivityFormModal: React.FC<ActivityFormModalProps> = ({
                 thumbColor={requiresNote ? colors.primary : colors.textSecondary}
               />
             </View>
+
+            {/* ── Progress tracking toggle ─────────────────────────────────── */}
+            <View
+              style={[
+                styles.toggleRow,
+                {
+                  backgroundColor: progressTrackingEnabled
+                    ? colors.primarySubtle
+                    : colors.background,
+                  borderColor: progressTrackingEnabled ? colors.primary : colors.border,
+                  marginBottom: Spacing.sm,
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.toggleIconWrap,
+                  {
+                    backgroundColor: progressTrackingEnabled
+                      ? colors.primaryMuted
+                      : colors.surfaceVariant,
+                  },
+                ]}
+              >
+                <FontAwesome5
+                  name="chart-line"
+                  size={13}
+                  color={progressTrackingEnabled ? colors.primary : colors.textSecondary}
+                />
+              </View>
+              <View style={styles.toggleTextWrap}>
+                <Text style={[styles.toggleLabel, { color: colors.textPrimary }]}>
+                  Track Progress
+                </Text>
+                <Text style={[styles.toggleSub, { color: colors.textSecondary }]}>
+                  {progressTrackingEnabled
+                    ? `Logging ${metricName.trim() || 'metric'} values each day`
+                    : 'Add a daily value such as reps, distance, or pages'}
+                </Text>
+              </View>
+              <Switch
+                value={progressTrackingEnabled}
+                onValueChange={(val) => {
+                  haptics.toggle(val);
+                  setProgressTrackingEnabled(val);
+                }}
+                trackColor={{ false: colors.surfaceVariant, true: colors.primaryMuted }}
+                thumbColor={progressTrackingEnabled ? colors.primary : colors.textSecondary}
+              />
+            </View>
+
+            {progressTrackingEnabled && (
+              <View
+                style={[
+                  styles.progressFields,
+                  { backgroundColor: colors.background, borderColor: colors.border },
+                ]}
+              >
+                <Text style={[styles.modePickerLabel, { color: colors.textSecondary }]}>
+                  Metric
+                </Text>
+                <View style={styles.progressInputRow}>
+                  <TextInput
+                    style={[
+                      styles.progressInput,
+                      {
+                        color: colors.textPrimary,
+                        borderColor: colors.border,
+                        backgroundColor: colors.surface,
+                      },
+                    ]}
+                    placeholder="e.g. Push-ups"
+                    value={metricName}
+                    onChangeText={setMetricName}
+                    maxLength={24}
+                  />
+                  <Text style={[styles.progressInputLabel, { color: colors.textSecondary }]}>
+                    name
+                  </Text>
+                </View>
+                <View style={styles.progressInputRow}>
+                  <TextInput
+                    style={[
+                      styles.progressInput,
+                      {
+                        color: colors.textPrimary,
+                        borderColor: colors.border,
+                        backgroundColor: colors.surface,
+                      },
+                    ]}
+                    placeholder="e.g. reps"
+                    value={unit}
+                    onChangeText={setUnit}
+                    maxLength={12}
+                  />
+                  <Text style={[styles.progressInputLabel, { color: colors.textSecondary }]}>
+                    unit
+                  </Text>
+                </View>
+              </View>
+            )}
 
             {/* ── Task Sequence toggle ───────────────────────────────────────── */}
             <View
@@ -1315,6 +1446,30 @@ const styles = StyleSheet.create({
   modePills: {
     flexDirection: 'row',
     gap: 6,
+  },
+  progressFields: {
+    borderRadius: BorderRadius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: Spacing.md,
+    marginBottom: Spacing.sm,
+  },
+  progressInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    marginTop: Spacing.sm,
+  },
+  progressInput: {
+    ...Typography.bodyMedium,
+    flex: 1,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: BorderRadius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+  },
+  progressInputLabel: {
+    ...Typography.labelMedium,
+    minWidth: 34,
   },
   modePill: {
     flexDirection: 'row',

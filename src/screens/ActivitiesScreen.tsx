@@ -64,6 +64,10 @@ export const ActivitiesScreen: React.FC = () => {
   } = useAttendanceStore();
 
   const [editingRequiresNote, setEditingRequiresNote] = useState<boolean>(false);
+  const [editingProgressTrackingEnabled, setEditingProgressTrackingEnabled] =
+    useState<boolean>(false);
+  const [editingMetricName, setEditingMetricName] = useState<string>('');
+  const [editingUnit, setEditingUnit] = useState<string>('');
   const [editingWeeklyGoal, setEditingWeeklyGoal] = useState<number | undefined>(undefined);
   const [editingTaskSequence, setEditingTaskSequence] = useState<SequenceTask[]>([]);
   const [editingSequenceMode, setEditingSequenceMode] = useState<'calendar' | 'log' | undefined>(
@@ -116,6 +120,9 @@ export const ActivitiesScreen: React.FC = () => {
     name: string,
     description: string,
     requiresNote: boolean,
+    progressTrackingEnabled?: boolean,
+    metricName?: string,
+    unit?: string,
     weeklyGoal?: number,
     taskSequence?: SequenceTask[],
     sequenceMode?: 'calendar' | 'log',
@@ -140,6 +147,9 @@ export const ActivitiesScreen: React.FC = () => {
         timeBoundStartTime,
         timeBoundEndTime,
         reminders,
+        progressTrackingEnabled,
+        metricName,
+        unit,
       );
     } else {
       createActivity(
@@ -156,6 +166,9 @@ export const ActivitiesScreen: React.FC = () => {
         activityType,
         streakGoal,
         reminders,
+        progressTrackingEnabled,
+        metricName,
+        unit,
       );
     }
     closeModal();
@@ -177,6 +190,9 @@ export const ActivitiesScreen: React.FC = () => {
     setEditingItemName(activity.name);
     setEditingDescription(activity.description ?? '');
     setEditingRequiresNote(activity?.requiresNote ?? false);
+    setEditingProgressTrackingEnabled(activity?.progressTrackingEnabled ?? false);
+    setEditingMetricName(activity?.metricName ?? '');
+    setEditingUnit(activity?.unit ?? '');
     setEditingWeeklyGoal(activity?.weeklyGoal);
     setEditingTaskSequence(activity?.taskSequence ?? []);
     setEditingSequenceMode(activity?.sequenceMode);
@@ -196,6 +212,9 @@ export const ActivitiesScreen: React.FC = () => {
     setEditingItemName('');
     setEditingDescription('');
     setEditingRequiresNote(false);
+    setEditingProgressTrackingEnabled(false);
+    setEditingMetricName('');
+    setEditingUnit('');
     setEditingWeeklyGoal(undefined);
     setEditingTaskSequence([]);
     setEditingSequenceMode(undefined);
@@ -619,6 +638,9 @@ export const ActivitiesScreen: React.FC = () => {
         initialName={editingItemName}
         initialDescription={editingDescription}
         initialRequiresNote={editingRequiresNote}
+        initialProgressTrackingEnabled={editingProgressTrackingEnabled}
+        initialMetricName={editingMetricName}
+        initialUnit={editingUnit}
         initialWeeklyGoal={editingWeeklyGoal}
         initialTaskSequence={editingTaskSequence}
         initialSequenceMode={editingSequenceMode}

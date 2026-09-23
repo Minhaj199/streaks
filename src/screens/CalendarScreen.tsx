@@ -33,6 +33,7 @@ export const CalendarScreen: React.FC = () => {
   const {
     logs,
     notes,
+    progress,
     taskHistory,
     sequenceSkips,
     sequenceDrops,
@@ -105,6 +106,10 @@ export const CalendarScreen: React.FC = () => {
           dropped: activityDrops.map((d) => d.date),
         }))
       : null;
+  const logModalProgress =
+    selectedActivityId && logModalDateKey
+      ? progress[selectedActivityId]?.[logModalDateKey]
+      : undefined;
   const logModalIsSequenceSkipped =
     !!logModalEntry && activitySequenceSkips.includes(logModalDateKey);
   // Tasks dropped on this day are worth showing whether or not the day itself
@@ -278,6 +283,9 @@ export const CalendarScreen: React.FC = () => {
         dateStr={logModalDate}
         timeData={logModalTime}
         notes={logModalNotes}
+        progressValue={logModalProgress?.value}
+        progressLabel={selectedActivity?.metricName}
+        progressUnit={selectedActivity?.unit}
         activityName={selectedActivity?.name}
         dateKey={logModalDateKey}
         isToday={logModalDateKey === today}

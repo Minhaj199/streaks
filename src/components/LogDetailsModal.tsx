@@ -39,6 +39,9 @@ export interface LogDetailsModalProps {
   dateStr: string;
   timeData: { time: string; tzDisplay: string | null } | null;
   notes?: NoteEntry[];
+  progressValue?: number;
+  progressLabel?: string;
+  progressUnit?: string;
   activityName?: string;
   dateKey?: string;
   isToday?: boolean;
@@ -77,6 +80,9 @@ export const LogDetailsModal: React.FC<LogDetailsModalProps> = ({
   dateStr,
   timeData,
   notes,
+  progressValue,
+  progressLabel,
+  progressUnit,
   activityName,
   isToday = false,
   isLogged = true,
@@ -566,6 +572,42 @@ export const LogDetailsModal: React.FC<LogDetailsModalProps> = ({
                                   {describeBackfillBlock(backfill.block, backfill.used)}
                                 </Text>
                               )}
+                            </View>
+                          </View>
+                        </>
+                      ) : null}
+
+                      {/* ── Progress value ── */}
+                      {progressLabel || progressUnit || typeof progressValue === 'number' ? (
+                        <>
+                          <View
+                            style={[styles.divider, { backgroundColor: colors.surfaceVariant }]}
+                          />
+                          <View style={styles.infoRow}>
+                            <View
+                              style={[
+                                styles.infoIconWrap,
+                                { backgroundColor: colors.primaryMuted },
+                              ]}
+                            >
+                              <FontAwesome5 name="chart-line" size={13} color={colors.primary} />
+                            </View>
+                            <View style={styles.infoTextWrap}>
+                              <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>
+                                Progress
+                              </Text>
+                              <Text style={[styles.infoValue, { color: colors.textPrimary }]}>
+                                {typeof progressValue === 'number'
+                                  ? `${progressValue} ${progressUnit ?? ''}`.trim()
+                                  : 'Not recorded'}
+                              </Text>
+                              {progressLabel ? (
+                                <Text
+                                  style={[styles.infoDescription, { color: colors.textTertiary }]}
+                                >
+                                  {progressLabel}
+                                </Text>
+                              ) : null}
                             </View>
                           </View>
                         </>

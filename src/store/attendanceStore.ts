@@ -7,6 +7,7 @@ import {
   NotesMap,
   NoteEntry,
   LogEntry,
+  ProgressMap,
   getTaskForDate,
   TaskHistoryMap,
   SequenceSkipsMap,
@@ -44,6 +45,7 @@ interface AttendanceState {
   activities: Activity[];
   logs: Record<string, LogEntry[]>;
   notes: NotesMap;
+  progress: ProgressMap;
   taskHistory: TaskHistoryMap;
   sequenceSkips: SequenceSkipsMap;
   sequenceDrops: SequenceDropsMap;
@@ -69,6 +71,9 @@ interface AttendanceState {
     activityType?: 'goal' | 'endless',
     streakGoal?: number,
     reminders?: HabitReminder[],
+    progressTrackingEnabled?: boolean,
+    metricName?: string,
+    unit?: string,
   ) => Promise<void>;
   editActivity: (
     id: string,
@@ -84,6 +89,9 @@ interface AttendanceState {
     timeBoundEndTime?: string | null,
     /** An empty array clears reminders; undefined leaves them unchanged. */
     reminders?: HabitReminder[],
+    progressTrackingEnabled?: boolean,
+    metricName?: string,
+    unit?: string,
   ) => Promise<void>;
   deleteActivity: (id: string) => Promise<void>;
   /** Bulk delete. One persistence pass, so selecting ten habits is one write. */
@@ -118,12 +126,17 @@ interface AttendanceState {
   appendNote: (activityId: string, dateStr: string, text: string) => Promise<void>;
   /** Edits the text of an existing note entry by index. The original timestamp is preserved. */
   editNote: (activityId: string, dateStr: string, index: number, text: string) => Promise<void>;
+  setProgress: (activityId: string, dateStr: string, value: number) => Promise<void>;
   exportData: () => Promise<string>;
   importData: (jsonData: string) => Promise<boolean>;
 
   // Derived getters
   getActivityStats: (activityId: string) => ActivityStats;
   getNoteEntries: (activityId: string, dateStr: string) => NoteEntry[] | undefined;
+  getProgressEntry: (
+    activityId: string,
+    dateStr: string,
+  ) => { value: number; date: string; ts: string; tz?: string } | undefined;
   /** Whether a past day can still be fixed, and how much of the quota is left. */
   getBackfillEligibility: (activityId: string, dateStr: string) => BackfillEligibility;
 }
@@ -135,6 +148,7 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
   activities: [],
   logs: {},
   notes: {},
+  progress: {},
   taskHistory: {},
   sequenceSkips: {},
   sequenceDrops: {},
@@ -149,6 +163,7 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
     const activities = await attendanceService.getActivities();
     const logs = await attendanceService.getLogs();
     const notes = await attendanceService.getNotes();
+    const progress = await attendanceService.getProgress();
     const taskHistory = await attendanceService.getTaskHistory();
     const sequenceSkips = await attendanceService.getSequenceSkips();
     const sequenceDrops = await attendanceService.getSequenceDrops();
@@ -173,6 +188,7 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
         activities,
         logs,
         notes,
+        progress,
         taskHistory,
         sequenceSkips,
         sequenceDrops,
@@ -186,6 +202,7 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
         activities,
         logs,
         notes,
+        progress,
         taskHistory,
         sequenceSkips,
         sequenceDrops,
@@ -211,6 +228,9 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
     activityType?: 'goal' | 'endless',
     streakGoal?: number,
     reminders?: HabitReminder[],
+    progressTrackingEnabled?: boolean,
+    metricName?: string,
+    unit?: string,
   ) => {
     const { activities } = get();
     const newActivity: Activity = {
@@ -219,6 +239,11 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
       createdAt: Date.now(),
       requiresNote: requiresNote ?? false,
       ...(description && description.trim() ? { description: description.trim() } : {}),
+      ...(progressTrackingEnabled ? { progressTrackingEnabled: true } : {}),
+      ...(progressTrackingEnabled && metricName && metricName.trim()
+        ? { metricName: metricName.trim() }
+        : {}),
+      ...(progressTrackingEnabled && unit && unit.trim() ? { unit: unit.trim() } : {}),
       activityType: activityType ?? 'endless',
       ...(activityType === 'goal' && streakGoal && streakGoal > 0 ? { streakGoal } : {}),
       ...(weeklyGoal !== undefined && weeklyGoal > 0 ? { weeklyGoal } : {}),
@@ -249,6 +274,9 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
     timeBoundStartTime?: string | null,
     timeBoundEndTime?: string | null,
     reminders?: HabitReminder[],
+    progressTrackingEnabled?: boolean,
+    metricName?: string,
+    unit?: string,
   ) => {
     const { activities } = get();
     const updatedActivities = activities.map((a) => {
@@ -263,6 +291,31 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
         }
       }
       if (requiresNote !== undefined) updated.requiresNote = requiresNote;
+      if (progressTrackingEnabled !== undefined) {
+        if (progressTrackingEnabled) {
+          updated.progressTrackingEnabled = true;
+        } else {
+          delete updated.progressTrackingEnabled;
+          delete updated.metricName;
+          delete updated.unit;
+        }
+      }
+      if (metricName !== undefined) {
+        const trimmedMetric = metricName.trim();
+        if (trimmedMetric && updated.progressTrackingEnabled) {
+          updated.metricName = trimmedMetric;
+        } else if (!trimmedMetric) {
+          delete updated.metricName;
+        }
+      }
+      if (unit !== undefined) {
+        const trimmedUnit = unit.trim();
+        if (trimmedUnit && updated.progressTrackingEnabled) {
+          updated.unit = trimmedUnit;
+        } else if (!trimmedUnit) {
+          delete updated.unit;
+        }
+      }
       // weeklyGoal=0 means "remove weekly mode"; undefined means "don't change"
       if (weeklyGoal !== undefined) {
         if (weeklyGoal > 0) {
@@ -332,6 +385,7 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
       activities,
       logs,
       notes,
+      progress,
       taskHistory,
       sequenceSkips,
       sequenceDrops,
@@ -349,6 +403,7 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
     const updatedActivities = activities.filter((a) => !doomed.has(a.id));
     const updatedLogs = without(logs);
     const updatedNotes = without(notes);
+    const updatedProgress = without(progress);
     const updatedTaskHistory = without(taskHistory);
     const updatedSequenceSkips = without(sequenceSkips);
     const updatedSequenceDrops = without(sequenceDrops);
@@ -356,6 +411,7 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
     await attendanceService.saveActivities(updatedActivities);
     await attendanceService.saveLogs(updatedLogs);
     await attendanceService.saveNotes(updatedNotes);
+    await attendanceService.saveProgress(updatedProgress);
     await attendanceService.saveTaskHistory(updatedTaskHistory);
     await attendanceService.saveSequenceSkips(updatedSequenceSkips);
     await attendanceService.saveSequenceDrops(updatedSequenceDrops);
@@ -707,8 +763,20 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
     set({ notes: updatedNotes });
   },
 
+  setProgress: async (activityId: string, dateStr: string, value: number) => {
+    const trimmed = Number.isFinite(value) ? value : Number.NaN;
+    if (!Number.isFinite(trimmed)) return;
+    const { progress } = get();
+    const updated = { ...progress };
+    const entry = { value: trimmed, date: dateStr, ts: dayjs().toISOString(), tz: getCurrentTz() };
+    if (!updated[activityId]) updated[activityId] = {};
+    updated[activityId][dateStr] = entry;
+    await attendanceService.saveProgress(updated);
+    set({ progress: updated });
+  },
+
   resetActivityData: async (id: string) => {
-    const { logs, notes, taskHistory, sequenceSkips, sequenceDrops } = get();
+    const { logs, notes, progress, taskHistory, sequenceSkips, sequenceDrops } = get();
     const updatedLogs = { ...logs };
     delete updatedLogs[id];
     await attendanceService.saveLogs(updatedLogs);
@@ -716,6 +784,10 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
     const updatedNotes = { ...notes };
     delete updatedNotes[id];
     await attendanceService.saveNotes(updatedNotes);
+
+    const updatedProgress = { ...progress };
+    delete updatedProgress[id];
+    await attendanceService.saveProgress(updatedProgress);
 
     const updatedTaskHistory = { ...taskHistory };
     delete updatedTaskHistory[id];
@@ -732,6 +804,7 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
     set({
       logs: updatedLogs,
       notes: updatedNotes,
+      progress: updatedProgress,
       taskHistory: updatedTaskHistory,
       sequenceSkips: updatedSequenceSkips,
       sequenceDrops: updatedSequenceDrops,
@@ -748,10 +821,11 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
       const activities = await attendanceService.getActivities();
       const logs = await attendanceService.getLogs();
       const notes = await attendanceService.getNotes();
+      const progress = await attendanceService.getProgress();
       const taskHistory = await attendanceService.getTaskHistory();
       const sequenceSkips = await attendanceService.getSequenceSkips();
       const sequenceDrops = await attendanceService.getSequenceDrops();
-      set({ activities, logs, notes, taskHistory, sequenceSkips, sequenceDrops });
+      set({ activities, logs, notes, progress, taskHistory, sequenceSkips, sequenceDrops });
     }
     return success;
   },
@@ -787,6 +861,10 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
 
   getNoteEntries: (activityId: string, dateStr: string) => {
     return get().notes[activityId]?.[dateStr];
+  },
+
+  getProgressEntry: (activityId: string, dateStr: string) => {
+    return get().progress[activityId]?.[dateStr];
   },
 
   getBackfillEligibility: (activityId: string, dateStr: string) => {

@@ -61,6 +61,33 @@ interface RowProps {
   tint?: string;
 }
 
+const formatLastBackupText = (lastSuccessfulBackupAt: string | null) => {
+  if (!lastSuccessfulBackupAt) return 'Never';
+
+  const snapshot = new Date(lastSuccessfulBackupAt);
+  if (Number.isNaN(snapshot.getTime())) return 'Never';
+
+  const now = new Date();
+  const sameDay =
+    snapshot.getFullYear() === now.getFullYear() &&
+    snapshot.getMonth() === now.getMonth() &&
+    snapshot.getDate() === now.getDate();
+
+  const timeText = new Intl.DateTimeFormat(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(snapshot);
+
+  if (sameDay) return `Today, ${timeText}`;
+
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(snapshot);
+};
+
 const Row: React.FC<RowProps> = ({
   icon,
   iconLib = 'ionicons',
@@ -137,6 +164,10 @@ export const SettingsScreen: React.FC = () => {
     setHideExtraDaysEnabled,
     isHapticsEnabled,
     setHapticsEnabled,
+    autoBackupEnabled,
+    lastSuccessfulBackupAt,
+    setAutoBackupEnabled,
+    recordSuccessfulBackup,
   } = useAttendanceStore();
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -155,6 +186,7 @@ export const SettingsScreen: React.FC = () => {
       await FileSystem.writeAsStringAsync(fileUri, dataStr, {
         encoding: FileSystem.EncodingType.UTF8,
       });
+      await recordSuccessfulBackup();
       const canShare = await Sharing.isAvailableAsync();
       if (canShare) {
         await Sharing.shareAsync(fileUri, {
@@ -315,17 +347,38 @@ export const SettingsScreen: React.FC = () => {
         </Section>
 
         {/* Data Management */}
-        <Section title="Your data" delay={170}>
+        <Section title="Backup & Restore" delay={170}>
           <Row
             icon="cloud-upload-outline"
-            label="Export backup"
+            label="Back up now"
             sublabel="Save your habits and logs to a file"
             tint={colors.success}
             onPress={isProcessing ? undefined : handleExport}
           />
           <Row
+            icon="repeat-outline"
+            label="Auto Backup"
+            sublabel="Automatically backs up your data once a day."
+            tint={colors.primary}
+            right={
+              <Switch
+                {...switchProps(autoBackupEnabled)}
+                onValueChange={async (value) => {
+                  haptics.toggle(value);
+                  await setAutoBackupEnabled(value);
+                }}
+              />
+            }
+          />
+          <Row
+            icon="time-outline"
+            label="Last backup"
+            sublabel={formatLastBackupText(lastSuccessfulBackupAt)}
+            tint={colors.textTertiary}
+          />
+          <Row
             icon="cloud-download-outline"
-            label="Import backup"
+            label="Restore backup"
             sublabel="Replace everything with a saved file"
             tint={colors.warning}
             onPress={isProcessing ? undefined : handleImport}

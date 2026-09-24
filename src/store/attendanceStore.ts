@@ -26,6 +26,14 @@ import {
 } from '../utils/streakUtils';
 import { todayStr, getCurrentTz } from '../utils/dateUtils';
 import { setHapticsEnabled as applyHapticsPreference } from '../utils/haptics';
+import {
+  getAutoBackupEnabled,
+  getLastSuccessfulBackupAt,
+  registerAutoBackupTask,
+  setAutoBackupEnabled as persistAutoBackupEnabled,
+  setLastSuccessfulBackupAt,
+  unregisterAutoBackupTask,
+} from '../services/autoBackupService';
 
 interface ActivityStats {
   currentStreak: number;
@@ -54,6 +62,8 @@ interface AttendanceState {
   isConfettiEnabled: boolean;
   isHideExtraDaysEnabled: boolean;
   isHapticsEnabled: boolean;
+  autoBackupEnabled: boolean;
+  lastSuccessfulBackupAt: string | null;
 
   // Actions
   hydrate: () => Promise<void>;
@@ -103,6 +113,8 @@ interface AttendanceState {
   setConfettiEnabled: (enabled: boolean) => Promise<void>;
   setHideExtraDaysEnabled: (enabled: boolean) => Promise<void>;
   setHapticsEnabled: (enabled: boolean) => Promise<void>;
+  setAutoBackupEnabled: (enabled: boolean) => Promise<void>;
+  recordSuccessfulBackup: (timestamp?: string) => Promise<void>;
   logToday: (activityId: string, note?: string) => Promise<void>;
   /**
    * Logs a past day the user actually completed but forgot to record.
@@ -157,6 +169,8 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
   isConfettiEnabled: true,
   isHideExtraDaysEnabled: true,
   isHapticsEnabled: true,
+  autoBackupEnabled: false,
+  lastSuccessfulBackupAt: null,
 
   hydrate: async () => {
     set({ isLoading: true });
@@ -180,6 +194,8 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
 
       const hapticsStr = await AsyncStorage.getItem(StorageKeys.HAPTICS);
       const isHapticsEnabled = hapticsStr ? JSON.parse(hapticsStr) : true;
+      const autoBackupEnabled = await getAutoBackupEnabled();
+      const lastSuccessfulBackupAt = await getLastSuccessfulBackupAt();
       // The haptics util is called from plain callbacks, so it keeps its own
       // mirror of this flag rather than subscribing to the store.
       applyHapticsPreference(isHapticsEnabled);
@@ -195,6 +211,8 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
         isConfettiEnabled,
         isHideExtraDaysEnabled,
         isHapticsEnabled,
+        autoBackupEnabled,
+        lastSuccessfulBackupAt,
         isLoading: false,
       });
     } catch {
@@ -209,6 +227,8 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
         isConfettiEnabled: true,
         isHideExtraDaysEnabled: true,
         isHapticsEnabled: true,
+        autoBackupEnabled: false,
+        lastSuccessfulBackupAt: null,
         isLoading: false,
       });
     }
@@ -476,6 +496,22 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
       await AsyncStorage.setItem(StorageKeys.HAPTICS, JSON.stringify(enabled));
     } catch {}
     set({ isHapticsEnabled: enabled });
+  },
+
+  setAutoBackupEnabled: async (enabled: boolean) => {
+    await persistAutoBackupEnabled(enabled);
+    if (enabled) {
+      await registerAutoBackupTask();
+    } else {
+      await unregisterAutoBackupTask();
+    }
+    set({ autoBackupEnabled: enabled });
+  },
+
+  recordSuccessfulBackup: async (timestamp?: string) => {
+    const nextTimestamp = timestamp ?? new Date().toISOString();
+    await setLastSuccessfulBackupAt(nextTimestamp);
+    set({ lastSuccessfulBackupAt: nextTimestamp });
   },
 
   logToday: async (activityId: string, note?: string) => {

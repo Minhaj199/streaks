@@ -8,6 +8,7 @@ import { useNotifications } from './src/hooks/useNotifications';
 import { useAlarmActions } from './src/hooks/useAlarmActions';
 import { AppNavigator } from './src/navigation/AppNavigator';
 import { ThemeProvider, useTheme } from './src/hooks/useTheme';
+import { registerAutoBackupTask, unregisterAutoBackupTask } from './src/services/autoBackupService';
 
 /**
  * Root app component.
@@ -18,6 +19,7 @@ import { ThemeProvider, useTheme } from './src/hooks/useTheme';
  */
 function AppContent() {
   const hydrate = useAttendanceStore((state) => state.hydrate);
+  const autoBackupEnabled = useAttendanceStore((state) => state.autoBackupEnabled);
   const { isDark, paperTheme, colors } = useTheme();
 
   // Initialize and observe notifications
@@ -28,7 +30,15 @@ function AppContent() {
   useEffect(() => {
     // Load all persisted logged dates on app launch
     hydrate();
-  }, []);
+  }, [hydrate]);
+
+  useEffect(() => {
+    if (autoBackupEnabled) {
+      registerAutoBackupTask();
+    } else {
+      unregisterAutoBackupTask();
+    }
+  }, [autoBackupEnabled]);
 
   return (
     <PaperProvider theme={paperTheme}>

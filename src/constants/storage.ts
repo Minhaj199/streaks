@@ -12,4 +12,6 @@ export const StorageKeys = {
   HAPTICS: '@streak_counter_haptics',
   SEQUENCE_SKIPS: 'streak_sequence_skips',
   SEQUENCE_DROPS: 'streak_sequence_drops',
+  AUTO_BACKUP_ENABLED: '@streak_counter_auto_backup_enabled',
+  LAST_SUCCESSFUL_BACKUP_AT: '@streak_counter_last_successful_backup_at',
 } as const;

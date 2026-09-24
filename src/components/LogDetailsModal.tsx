@@ -39,6 +39,9 @@ export interface LogDetailsModalProps {
   dateStr: string;
   timeData: { time: string; tzDisplay: string | null } | null;
   notes?: NoteEntry[];
+  progressValue?: number;
+  progressLabel?: string;
+  progressUnit?: string;
   activityName?: string;
   dateKey?: string;
   isToday?: boolean;
@@ -63,8 +66,8 @@ export interface LogDetailsModalProps {
    * can't. Omit to hide the fix affordance entirely.
    */
   backfill?: BackfillEligibility;
-  /** Records this day as done, with the optional reason the user typed. Resolves false if refused. */
-  onBackfill?: (reason?: string) => Promise<boolean>;
+  /** Records this day as done, with the reason the user typed. Resolves false if refused. */
+  onBackfill?: (reason: string) => Promise<boolean>;
   /** Appends a new note entry for today. */
   onNoteAppend?: (text: string) => Promise<void>;
   /** Edits an existing note entry by index. */
@@ -77,6 +80,9 @@ export const LogDetailsModal: React.FC<LogDetailsModalProps> = ({
   dateStr,
   timeData,
   notes,
+  progressValue,
+  progressLabel,
+  progressUnit,
   activityName,
   isToday = false,
   isLogged = true,
@@ -96,8 +102,9 @@ export const LogDetailsModal: React.FC<LogDetailsModalProps> = ({
   const { colors } = useTheme();
 
   /**
-   * What the stacked text sheet is currently for. `fix` writes an optional
-   * reason for a missed day rather than an ordinary note.
+   * What the stacked text sheet is currently for. `fix` writes the mandatory
+   * reason for a missed day rather than an ordinary note — same input, very
+   * different consequence, so the two are distinct modes rather than a flag.
    */
   type DraftMode = { kind: 'add' } | { kind: 'edit'; index: number } | { kind: 'fix' };
 
@@ -152,21 +159,6 @@ export const LogDetailsModal: React.FC<LogDetailsModalProps> = ({
     haptics.medium();
     setDraftNote('');
     setDraftMode({ kind: 'fix' });
-  };
-
-  const handleDirectComplete = async () => {
-    if (isSaving || !onBackfill) return;
-    setIsSaving(true);
-    try {
-      const done = await onBackfill('');
-      if (done) {
-        haptics.success();
-      } else {
-        haptics.error();
-      }
-    } finally {
-      setIsSaving(false);
-    }
   };
 
   const handleSave = async () => {
@@ -549,63 +541,29 @@ export const LogDetailsModal: React.FC<LogDetailsModalProps> = ({
                                     afterwards, and you get {BACKFILL_QUOTA} of these a month.
                                     {backfill.remaining} left.
                                   </Text>
-                                  <View style={styles.actionRow}>
-                                    <Pressable
-                                      style={({ pressed }) => [
-                                        styles.completeBtn,
-                                        {
-                                          backgroundColor: colors.primary,
-                                          opacity: isSaving ? 0.7 : pressed ? 0.85 : 1,
-                                        },
-                                      ]}
-                                      onPress={handleDirectComplete}
-                                      disabled={isSaving}
-                                      android_ripple={{ color: '#ffffff33', radius: 100 }}
-                                      accessibilityRole="button"
-                                      accessibilityLabel="I completed this habit"
-                                    >
-                                      {isSaving ? (
-                                        <ActivityIndicator size={15} color="#fff" />
-                                      ) : (
-                                        <>
-                                          <Ionicons
-                                            name="checkmark-circle"
-                                            size={16}
-                                            color="#fff"
-                                          />
-                                          <Text style={styles.completeBtnText}>
-                                            ✓ I completed this habit
-                                          </Text>
-                                        </>
-                                      )}
-                                    </Pressable>
-
-                                    <Pressable
-                                      style={({ pressed }) => [
-                                        styles.addNoteLinkBtn,
-                                        { opacity: pressed ? 0.6 : 1 },
-                                      ]}
-                                      onPress={openFix}
-                                      disabled={isSaving}
-                                      hitSlop={8}
-                                      accessibilityRole="button"
-                                      accessibilityLabel="Add note with fix"
-                                    >
-                                      <FontAwesome5
-                                        name="pen"
-                                        size={11}
-                                        color={colors.textSecondary}
-                                      />
-                                      <Text
-                                        style={[
-                                          styles.addNoteLinkText,
-                                          { color: colors.textSecondary },
-                                        ]}
-                                      >
-                                        With note
-                                      </Text>
-                                    </Pressable>
-                                  </View>
+                                  <Pressable
+                                    style={({ pressed }) => [
+                                      styles.fixBtn,
+                                      {
+                                        backgroundColor: colors.primaryMuted,
+                                        borderColor: colors.primaryBorder,
+                                        opacity: pressed ? 0.7 : 1,
+                                      },
+                                    ]}
+                                    onPress={openFix}
+                                    android_ripple={{ color: colors.primary + '33', radius: 80 }}
+                                    accessibilityRole="button"
+                                    accessibilityLabel="Log this missed day"
+                                  >
+                                    <Ionicons
+                                      name="checkmark-done"
+                                      size={15}
+                                      color={colors.primary}
+                                    />
+                                    <Text style={[styles.fixBtnText, { color: colors.primary }]}>
+                                      I actually did this
+                                    </Text>
+                                  </Pressable>
                                 </>
                               ) : (
                                 <Text
@@ -614,6 +572,42 @@ export const LogDetailsModal: React.FC<LogDetailsModalProps> = ({
                                   {describeBackfillBlock(backfill.block, backfill.used)}
                                 </Text>
                               )}
+                            </View>
+                          </View>
+                        </>
+                      ) : null}
+
+                      {/* ── Progress value ── */}
+                      {progressLabel || progressUnit || typeof progressValue === 'number' ? (
+                        <>
+                          <View
+                            style={[styles.divider, { backgroundColor: colors.surfaceVariant }]}
+                          />
+                          <View style={styles.infoRow}>
+                            <View
+                              style={[
+                                styles.infoIconWrap,
+                                { backgroundColor: colors.primaryMuted },
+                              ]}
+                            >
+                              <FontAwesome5 name="chart-line" size={13} color={colors.primary} />
+                            </View>
+                            <View style={styles.infoTextWrap}>
+                              <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>
+                                Progress
+                              </Text>
+                              <Text style={[styles.infoValue, { color: colors.textPrimary }]}>
+                                {typeof progressValue === 'number'
+                                  ? `${progressValue} ${progressUnit ?? ''}`.trim()
+                                  : 'Not recorded'}
+                              </Text>
+                              {progressLabel ? (
+                                <Text
+                                  style={[styles.infoDescription, { color: colors.textTertiary }]}
+                                >
+                                  {progressLabel}
+                                </Text>
+                              ) : null}
                             </View>
                           </View>
                         </>
@@ -1423,36 +1417,6 @@ const styles = StyleSheet.create({
   addNoteBtnText: {
     ...Typography.labelMedium,
     fontWeight: '700',
-  },
-  actionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-    marginTop: Spacing.sm,
-  },
-  completeBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.full,
-  },
-  completeBtnText: {
-    ...Typography.labelMedium,
-    color: '#fff',
-    fontWeight: '700',
-  },
-  addNoteLinkBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: Spacing.sm,
-  },
-  addNoteLinkText: {
-    ...Typography.labelMedium,
-    fontWeight: '600',
   },
   // Deliberately a modest outlined button rather than a filled call to action —
   // fixing a missed day is a recovery path, not something to invite.

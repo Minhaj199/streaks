@@ -16,6 +16,19 @@ export interface SequenceTask {
   description?: string;
 }
 
+/** A daily push notification nudging the user to do one habit. */
+export interface HabitReminder {
+  time: string; // "HH:mm", 24h local time
+  /** Notification body. Falls back to a generic line naming the habit. */
+  message?: string;
+  /**
+   * Alarm style: rings on the alarm channel (alarm volume, can break through
+   * Do Not Disturb), can't be swiped away, and re-fires a few times until the
+   * habit is logged.
+   */
+  alarm?: boolean;
+}
+
 export interface Activity {
   id: string;
   name: string;
@@ -27,6 +40,9 @@ export interface Activity {
   description?: string;
   createdAt: number;
   requiresNote?: boolean;
+  progressTrackingEnabled?: boolean;
+  metricName?: string;
+  unit?: string;
   /**
    * When set (1–7), this activity uses Weekly Goal mode.
    * The streak counts consecutive calendar weeks where the user logged at least this many times.
@@ -74,6 +90,12 @@ export interface Activity {
    * Presence of this field means the activity is in the Completed state.
    */
   completedAt?: number;
+
+  /**
+   * Per-habit reminders. Skipped on days the habit is already logged, and
+   * never sent once the habit is completed.
+   */
+  reminders?: HabitReminder[];
 }
 
 /**
@@ -107,8 +129,16 @@ export interface NoteEntry {
   tz?: string;
 }
 
+export interface ProgressEntry {
+  value: number;
+  date: string;
+  ts: string;
+  tz?: string;
+}
+
 // Notes: { [activityId]: { [dateStr YYYY-MM-DD]: NoteEntry[] } }
 export type NotesMap = Record<string, Record<string, NoteEntry[]>>;
+export type ProgressMap = Record<string, Record<string, ProgressEntry>>;
 
 // TaskHistory: { [activityId]: { [dateStr YYYY-MM-DD]: SequenceTask } }
 // Older versions stored a bare title string per date; those are migrated on read.
@@ -307,6 +337,38 @@ export const attendanceService = {
     await AsyncStorage.setItem(StorageKeys.NOTES, JSON.stringify(notes));
   },
 
+  getProgress: async (): Promise<ProgressMap> => {
+    try {
+      const raw = await AsyncStorage.getItem(StorageKeys.PROGRESS);
+      if (!raw) return {};
+      const parsed = JSON.parse(raw) as Record<string, Record<string, unknown>>;
+      const result: ProgressMap = {};
+      for (const actId of Object.keys(parsed)) {
+        result[actId] = {};
+        for (const dateStr of Object.keys(parsed[actId] ?? {})) {
+          const value = parsed[actId][dateStr];
+          if (!value || typeof value !== 'object') continue;
+          const entry = value as Record<string, unknown>;
+          const numericValue = typeof entry.value === 'number' ? entry.value : Number(entry.value);
+          if (!Number.isFinite(numericValue)) continue;
+          result[actId][dateStr] = {
+            value: numericValue,
+            date: typeof entry.date === 'string' ? entry.date : dateStr,
+            ts: typeof entry.ts === 'string' ? entry.ts : new Date().toISOString(),
+            tz: typeof entry.tz === 'string' ? entry.tz : undefined,
+          };
+        }
+      }
+      return result;
+    } catch {
+      return {};
+    }
+  },
+
+  saveProgress: async (progress: ProgressMap): Promise<void> => {
+    await AsyncStorage.setItem(StorageKeys.PROGRESS, JSON.stringify(progress));
+  },
+
   getTaskHistory: async (): Promise<TaskHistoryMap> => {
     try {
       const raw = await AsyncStorage.getItem(StorageKeys.TASK_HISTORY);
@@ -389,8 +451,10 @@ export const attendanceService = {
   /**
    * Records a day the user completed but forgot to log.
    *
-   * Callers must clear `getBackfillEligibility` first. A reason is optional
-   * and is stored as an ordinary note only when the user provided one.
+   * Callers must clear `getBackfillEligibility` first — this layer enforces
+   * only the invariant every log path shares (one entry per day) and the one
+   * this path adds (a reason is not optional). The reason is stored as an
+   * ordinary note so it shows up in the day's timeline and in exports.
    *
    * Entries are inserted in date order rather than appended, so the stored list
    * stays ascending the way every other write leaves it.
@@ -398,8 +462,11 @@ export const attendanceService = {
   logPastDate: async (
     activityId: string,
     dateStr: string,
-    reason?: string | null,
+    reason: string,
   ): Promise<LogEntry | null> => {
+    const trimmed = reason.trim();
+    if (!trimmed) return null;
+
     const logs = await attendanceService.getLogs();
     const activityLogs = logs[activityId] || [];
     if (activityLogs.some((entry) => entry.date === dateStr)) return null;
@@ -417,9 +484,7 @@ export const attendanceService = {
         : [...activityLogs.slice(0, insertAt), newEntry, ...activityLogs.slice(insertAt)];
     await attendanceService.saveLogs(logs);
 
-    if (reason && reason.trim()) {
-      await attendanceService.appendNote(activityId, dateStr, reason.trim());
-    }
+    await attendanceService.appendNote(activityId, dateStr, trimmed);
 
     return newEntry;
   },
@@ -462,6 +527,7 @@ export const attendanceService = {
     await AsyncStorage.removeItem(StorageKeys.ACTIVITIES);
     await AsyncStorage.removeItem(StorageKeys.LOGS);
     await AsyncStorage.removeItem(StorageKeys.NOTES);
+    await AsyncStorage.removeItem(StorageKeys.PROGRESS);
     await AsyncStorage.removeItem(StorageKeys.TASK_HISTORY);
     await AsyncStorage.removeItem(StorageKeys.SEQUENCE_SKIPS);
     await AsyncStorage.removeItem(StorageKeys.SEQUENCE_DROPS);
@@ -471,10 +537,19 @@ export const attendanceService = {
     const activities = await attendanceService.getActivities();
     const logs = await attendanceService.getLogs();
     const notes = await attendanceService.getNotes();
+    const progress = await attendanceService.getProgress();
     const taskHistory = await attendanceService.getTaskHistory();
     const sequenceSkips = await attendanceService.getSequenceSkips();
     const sequenceDrops = await attendanceService.getSequenceDrops();
-    return JSON.stringify({ activities, logs, notes, taskHistory, sequenceSkips, sequenceDrops });
+    return JSON.stringify({
+      activities,
+      logs,
+      notes,
+      progress,
+      taskHistory,
+      sequenceSkips,
+      sequenceDrops,
+    });
   },
 
   importData: async (jsonData: string): Promise<boolean> => {
@@ -484,31 +559,29 @@ export const attendanceService = {
       if (!Array.isArray(parsed.activities)) return false;
       if (!parsed.logs || typeof parsed.logs !== 'object') return false;
 
-      // Basic validation of activities
       for (const act of parsed.activities) {
-        if (!act.id || !act.name) return false;
+        if (!act || typeof act !== 'object' || !act.id || !act.name) return false;
       }
 
       await attendanceService.saveActivities(parsed.activities);
       await attendanceService.saveLogs(parsed.logs);
 
-      // Notes are optional (older exports won't have them)
       if (parsed.notes && typeof parsed.notes === 'object') {
         await attendanceService.saveNotes(parsed.notes);
       }
 
-      // Task history is optional
+      if (parsed.progress && typeof parsed.progress === 'object') {
+        await attendanceService.saveProgress(parsed.progress);
+      }
+
       if (parsed.taskHistory && typeof parsed.taskHistory === 'object') {
         await attendanceService.saveTaskHistory(parsed.taskHistory);
       }
 
-      // Sequence skips are optional (older exports won't have them)
       if (parsed.sequenceSkips && typeof parsed.sequenceSkips === 'object') {
         await attendanceService.saveSequenceSkips(parsed.sequenceSkips);
       }
 
-      // Sequence drops are optional too, and normalized on the way in — a bad
-      // date here would silently shift every task in the sequence.
       if (parsed.sequenceDrops && typeof parsed.sequenceDrops === 'object') {
         await attendanceService.saveSequenceDrops(normalizeSequenceDropsMap(parsed.sequenceDrops));
       }

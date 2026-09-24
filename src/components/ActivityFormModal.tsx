@@ -26,7 +26,14 @@ import { Typography, Spacing, BorderRadius, HitSlop, alpha } from '../constants'
 import { FontAwesome5 } from '@expo/vector-icons';
 import { useTheme } from '../hooks/useTheme';
 import { TaskSequenceEditor } from './TaskSequenceEditor';
-import { SequenceTask } from '../features/attendance/attendanceService';
+import {
+  ReminderEditor,
+  ReminderDraft,
+  toReminderDraft,
+  fromReminderDraft,
+  isReminderDraftValid,
+} from './ReminderEditor';
+import { HabitReminder, SequenceTask } from '../features/attendance/attendanceService';
 import { to12h, to24h, isValidTime12h } from '../utils/dateUtils';
 import { haptics } from '../utils/haptics';
 
@@ -36,6 +43,9 @@ export interface ActivityFormModalProps {
   initialName: string;
   initialDescription?: string;
   initialRequiresNote?: boolean;
+  initialProgressTrackingEnabled?: boolean;
+  initialMetricName?: string;
+  initialUnit?: string;
   initialWeeklyGoal?: number;
   initialTaskSequence?: SequenceTask[];
   initialSequenceMode?: 'calendar' | 'log';
@@ -44,11 +54,15 @@ export interface ActivityFormModalProps {
   initialTimeBoundEndTime?: string;
   initialActivityType?: 'goal' | 'endless';
   initialStreakGoal?: number;
+  initialReminder?: HabitReminder;
   onClose: () => void;
   onSave: (
     name: string,
     description: string,
     requiresNote: boolean,
+    progressTrackingEnabled?: boolean,
+    metricName?: string,
+    unit?: string,
     weeklyGoal?: number,
     taskSequence?: SequenceTask[],
     sequenceMode?: 'calendar' | 'log',
@@ -57,10 +71,14 @@ export interface ActivityFormModalProps {
     timeBoundEndTime?: string | null,
     activityType?: 'goal' | 'endless',
     streakGoal?: number,
+    reminders?: HabitReminder[],
   ) => void;
 }
 
 const GOAL_OPTIONS = [1, 2, 3, 4, 5, 6, 7];
+
+/** Ceiling for the reminder panel's open animation; tall enough for every notice it can show. */
+const REMINDER_MAX_HEIGHT = 560;
 
 export const ActivityFormModal: React.FC<ActivityFormModalProps> = ({
   visible,
@@ -68,6 +86,9 @@ export const ActivityFormModal: React.FC<ActivityFormModalProps> = ({
   initialName,
   initialDescription = '',
   initialRequiresNote = false,
+  initialProgressTrackingEnabled = false,
+  initialMetricName = '',
+  initialUnit = '',
   initialWeeklyGoal,
   initialTaskSequence,
   initialSequenceMode,
@@ -76,6 +97,7 @@ export const ActivityFormModal: React.FC<ActivityFormModalProps> = ({
   initialTimeBoundEndTime,
   initialActivityType,
   initialStreakGoal,
+  initialReminder,
   onClose,
   onSave,
 }) => {
@@ -85,6 +107,9 @@ export const ActivityFormModal: React.FC<ActivityFormModalProps> = ({
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [requiresNote, setRequiresNote] = useState(false);
+  const [progressTrackingEnabled, setProgressTrackingEnabled] = useState(false);
+  const [metricName, setMetricName] = useState('');
+  const [unit, setUnit] = useState('');
   const [weeklyModeEnabled, setWeeklyModeEnabled] = useState(false);
   const [weeklyGoal, setWeeklyGoal] = useState(3);
   const [taskSeqEnabled, setTaskSeqEnabled] = useState(false);
@@ -101,6 +126,9 @@ export const ActivityFormModal: React.FC<ActivityFormModalProps> = ({
   const [timeBoundEndTime, setTimeBoundEndTime] = useState('');
   const [endAmPm, setEndAmPm] = useState<'AM' | 'PM'>('AM');
 
+  const [reminderEnabled, setReminderEnabled] = useState(false);
+  const [reminderDraft, setReminderDraft] = useState<ReminderDraft>(() => toReminderDraft());
+
   const inputRef = useRef<TextInput>(null);
 
   const pickerHeight = useSharedValue(0);
@@ -109,6 +137,8 @@ export const ActivityFormModal: React.FC<ActivityFormModalProps> = ({
   const taskSeqOpacity = useSharedValue(0);
   const timeBoundHeight = useSharedValue(0);
   const timeBoundOpacity = useSharedValue(0);
+  const reminderHeight = useSharedValue(0);
+  const reminderOpacity = useSharedValue(0);
 
   const pickerStyle = useAnimatedStyle(() => ({
     height: pickerHeight.value,
@@ -128,11 +158,20 @@ export const ActivityFormModal: React.FC<ActivityFormModalProps> = ({
     overflow: 'hidden',
   }));
 
+  const reminderStyle = useAnimatedStyle(() => ({
+    maxHeight: reminderHeight.value,
+    opacity: reminderOpacity.value,
+    overflow: 'hidden',
+  }));
+
   useEffect(() => {
     if (visible) {
       setName(initialName);
       setDescription(initialDescription);
       setRequiresNote(initialRequiresNote);
+      setProgressTrackingEnabled(initialProgressTrackingEnabled);
+      setMetricName(initialMetricName ?? '');
+      setUnit(initialUnit ?? '');
       const hasGoal = !!initialWeeklyGoal && initialWeeklyGoal > 0;
       setWeeklyModeEnabled(hasGoal);
       setWeeklyGoal(initialWeeklyGoal && initialWeeklyGoal > 0 ? initialWeeklyGoal : 3);
@@ -159,6 +198,10 @@ export const ActivityFormModal: React.FC<ActivityFormModalProps> = ({
       setTimeBoundEndTime(end12.time);
       setEndAmPm(end12.ampm);
 
+      const hasReminder = !!initialReminder;
+      setReminderEnabled(hasReminder);
+      setReminderDraft(toReminderDraft(initialReminder));
+
       // Animate pickers to correct state immediately (no animation on open)
       pickerHeight.value = hasGoal ? 60 : 0;
       pickerOpacity.value = hasGoal ? 1 : 0;
@@ -166,12 +209,17 @@ export const ActivityFormModal: React.FC<ActivityFormModalProps> = ({
       taskSeqOpacity.value = hasTasks ? 1 : 0;
       timeBoundHeight.value = hasTimeBound ? 320 : 0;
       timeBoundOpacity.value = hasTimeBound ? 1 : 0;
+      reminderHeight.value = hasReminder ? REMINDER_MAX_HEIGHT : 0;
+      reminderOpacity.value = hasReminder ? 1 : 0;
     }
   }, [
     visible,
     initialName,
     initialDescription,
     initialRequiresNote,
+    initialProgressTrackingEnabled,
+    initialMetricName,
+    initialUnit,
     initialWeeklyGoal,
     initialTaskSequence,
     initialSequenceMode,
@@ -180,6 +228,7 @@ export const ActivityFormModal: React.FC<ActivityFormModalProps> = ({
     initialTimeBoundEndTime,
     initialActivityType,
     initialStreakGoal,
+    initialReminder,
   ]);
 
   const handleWeeklyToggle = (val: boolean) => {
@@ -202,6 +251,13 @@ export const ActivityFormModal: React.FC<ActivityFormModalProps> = ({
     setTimeBoundEnabled(val);
     timeBoundHeight.value = withTiming(val ? 320 : 0, { duration: 300 });
     timeBoundOpacity.value = withTiming(val ? 1 : 0, { duration: 250 });
+  };
+
+  const handleReminderToggle = (val: boolean) => {
+    haptics.toggle(val);
+    setReminderEnabled(val);
+    reminderHeight.value = withTiming(val ? REMINDER_MAX_HEIGHT : 0, { duration: 300 });
+    reminderOpacity.value = withTiming(val ? 1 : 0, { duration: 250 });
   };
 
   /**
@@ -247,11 +303,17 @@ export const ActivityFormModal: React.FC<ActivityFormModalProps> = ({
     // Guards double as the validity check, so anything past them is a real save.
     if (!name.trim()) return haptics.warning();
     if (activityType === 'goal' && (!streakGoal || streakGoal < 1)) return haptics.warning();
+    if (progressTrackingEnabled) {
+      if (!metricName.trim() || !unit.trim()) return haptics.warning();
+    }
     haptics.success();
     onSave(
       name.trim(),
       description.trim(),
       requiresNote,
+      progressTrackingEnabled,
+      progressTrackingEnabled ? metricName.trim() : undefined,
+      progressTrackingEnabled ? unit.trim() : undefined,
       weeklyModeEnabled ? weeklyGoal : undefined,
       taskSeqEnabled && tasks.length > 0 ? tasks : [],
       taskSeqEnabled && tasks.length > 0 ? sequenceMode : undefined,
@@ -260,6 +322,7 @@ export const ActivityFormModal: React.FC<ActivityFormModalProps> = ({
       timeBoundEnabled && timeBoundType === 'between' ? to24h(timeBoundEndTime, endAmPm) : null,
       activityType,
       activityType === 'goal' ? streakGoal : undefined,
+      reminderEnabled ? [fromReminderDraft(reminderDraft)] : [],
     );
   };
 
@@ -279,7 +342,14 @@ export const ActivityFormModal: React.FC<ActivityFormModalProps> = ({
       : isValidTime12h(timeBoundStartTime));
 
   const isStreakGoalValid = activityType !== 'goal' || streakGoal >= 1;
-  const canSave = name.trim().length > 0 && isTimeValid && isStreakGoalValid;
+  const isReminderValid = !reminderEnabled || isReminderDraftValid(reminderDraft);
+  const isProgressValid = !progressTrackingEnabled || (!!metricName.trim() && !!unit.trim());
+  const canSave =
+    name.trim().length > 0 &&
+    isTimeValid &&
+    isStreakGoalValid &&
+    isReminderValid &&
+    isProgressValid;
 
   const timeOrderInvalid =
     timeBoundEnabled &&
@@ -706,6 +776,107 @@ export const ActivityFormModal: React.FC<ActivityFormModalProps> = ({
               />
             </View>
 
+            {/* ── Progress tracking toggle ─────────────────────────────────── */}
+            <View
+              style={[
+                styles.toggleRow,
+                {
+                  backgroundColor: progressTrackingEnabled
+                    ? colors.primarySubtle
+                    : colors.background,
+                  borderColor: progressTrackingEnabled ? colors.primary : colors.border,
+                  marginBottom: Spacing.sm,
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.toggleIconWrap,
+                  {
+                    backgroundColor: progressTrackingEnabled
+                      ? colors.primaryMuted
+                      : colors.surfaceVariant,
+                  },
+                ]}
+              >
+                <FontAwesome5
+                  name="chart-line"
+                  size={13}
+                  color={progressTrackingEnabled ? colors.primary : colors.textSecondary}
+                />
+              </View>
+              <View style={styles.toggleTextWrap}>
+                <Text style={[styles.toggleLabel, { color: colors.textPrimary }]}>
+                  Track Progress
+                </Text>
+                <Text style={[styles.toggleSub, { color: colors.textSecondary }]}>
+                  {progressTrackingEnabled
+                    ? `Logging ${metricName.trim() || 'metric'} values each day`
+                    : 'Add a daily value such as reps, distance, or pages'}
+                </Text>
+              </View>
+              <Switch
+                value={progressTrackingEnabled}
+                onValueChange={(val) => {
+                  haptics.toggle(val);
+                  setProgressTrackingEnabled(val);
+                }}
+                trackColor={{ false: colors.surfaceVariant, true: colors.primaryMuted }}
+                thumbColor={progressTrackingEnabled ? colors.primary : colors.textSecondary}
+              />
+            </View>
+
+            {progressTrackingEnabled && (
+              <View
+                style={[
+                  styles.progressFields,
+                  { backgroundColor: colors.background, borderColor: colors.border },
+                ]}
+              >
+                <Text style={[styles.modePickerLabel, { color: colors.textSecondary }]}>
+                  Metric
+                </Text>
+                <View style={styles.progressInputRow}>
+                  <TextInput
+                    style={[
+                      styles.progressInput,
+                      {
+                        color: colors.textPrimary,
+                        borderColor: colors.border,
+                        backgroundColor: colors.surface,
+                      },
+                    ]}
+                    placeholder="e.g. Push-ups"
+                    value={metricName}
+                    onChangeText={setMetricName}
+                    maxLength={24}
+                  />
+                  <Text style={[styles.progressInputLabel, { color: colors.textSecondary }]}>
+                    name
+                  </Text>
+                </View>
+                <View style={styles.progressInputRow}>
+                  <TextInput
+                    style={[
+                      styles.progressInput,
+                      {
+                        color: colors.textPrimary,
+                        borderColor: colors.border,
+                        backgroundColor: colors.surface,
+                      },
+                    ]}
+                    placeholder="e.g. reps"
+                    value={unit}
+                    onChangeText={setUnit}
+                    maxLength={12}
+                  />
+                  <Text style={[styles.progressInputLabel, { color: colors.textSecondary }]}>
+                    unit
+                  </Text>
+                </View>
+              </View>
+            )}
+
             {/* ── Task Sequence toggle ───────────────────────────────────────── */}
             <View
               style={[
@@ -998,6 +1169,59 @@ export const ActivityFormModal: React.FC<ActivityFormModalProps> = ({
               )}
               <View style={{ height: Spacing.md }} />
             </Animated.View>
+
+            {/* ── Reminder toggle ─────────────────────────────────────────── */}
+            <View
+              style={[
+                styles.toggleRow,
+                {
+                  backgroundColor: reminderEnabled ? colors.primarySubtle : colors.background,
+                  borderColor: reminderEnabled ? colors.primary : colors.border,
+                  marginBottom: Spacing.sm,
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.toggleIconWrap,
+                  {
+                    backgroundColor: reminderEnabled ? colors.primaryMuted : colors.surfaceVariant,
+                  },
+                ]}
+              >
+                <FontAwesome5
+                  name="bell"
+                  size={13}
+                  color={reminderEnabled ? colors.primary : colors.textSecondary}
+                />
+              </View>
+              <View style={styles.toggleTextWrap}>
+                <Text style={[styles.toggleLabel, { color: colors.textPrimary }]}>Reminder</Text>
+                <Text style={[styles.toggleSub, { color: colors.textSecondary }]}>
+                  {reminderEnabled && isReminderDraftValid(reminderDraft)
+                    ? `${reminderDraft.mode === 'alarm' ? 'Alarm' : 'Notification'} daily at ${reminderDraft.time} ${reminderDraft.ampm}`
+                    : 'Get a notification at a set time'}
+                </Text>
+              </View>
+              <Switch
+                value={reminderEnabled}
+                onValueChange={handleReminderToggle}
+                trackColor={{ false: colors.surfaceVariant, true: colors.primaryMuted }}
+                thumbColor={reminderEnabled ? colors.primary : colors.textSecondary}
+              />
+            </View>
+
+            {/* Reminder fields — animates open */}
+            <Animated.View style={reminderStyle}>
+              <View style={styles.reminderBody}>
+                <ReminderEditor
+                  draft={reminderDraft}
+                  onChange={setReminderDraft}
+                  habitName={name}
+                  fieldBackground={colors.background}
+                />
+              </View>
+            </Animated.View>
           </ScrollView>
 
           {/* Actions */}
@@ -1223,6 +1447,30 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 6,
   },
+  progressFields: {
+    borderRadius: BorderRadius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: Spacing.md,
+    marginBottom: Spacing.sm,
+  },
+  progressInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    marginTop: Spacing.sm,
+  },
+  progressInput: {
+    ...Typography.bodyMedium,
+    flex: 1,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: BorderRadius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+  },
+  progressInputLabel: {
+    ...Typography.labelMedium,
+    minWidth: 34,
+  },
   modePill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1238,6 +1486,10 @@ const styles = StyleSheet.create({
   modeHint: {
     ...Typography.bodySmall,
     marginBottom: Spacing.sm,
+  },
+  reminderBody: {
+    paddingTop: Spacing.xs,
+    paddingBottom: Spacing.md,
   },
   amPmToggle: {
     paddingHorizontal: Spacing.sm,

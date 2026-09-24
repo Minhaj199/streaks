@@ -9,6 +9,7 @@ import { FontAwesome5 } from '@expo/vector-icons';
 import dayjs from 'dayjs';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { useAttendanceStore, SequenceTask } from '../store/attendanceStore';
+import { HabitReminder } from '../features/attendance/attendanceService';
 import {
   Typography,
   Spacing,
@@ -63,6 +64,10 @@ export const ActivitiesScreen: React.FC = () => {
   } = useAttendanceStore();
 
   const [editingRequiresNote, setEditingRequiresNote] = useState<boolean>(false);
+  const [editingProgressTrackingEnabled, setEditingProgressTrackingEnabled] =
+    useState<boolean>(false);
+  const [editingMetricName, setEditingMetricName] = useState<string>('');
+  const [editingUnit, setEditingUnit] = useState<string>('');
   const [editingWeeklyGoal, setEditingWeeklyGoal] = useState<number | undefined>(undefined);
   const [editingTaskSequence, setEditingTaskSequence] = useState<SequenceTask[]>([]);
   const [editingSequenceMode, setEditingSequenceMode] = useState<'calendar' | 'log' | undefined>(
@@ -81,6 +86,7 @@ export const ActivitiesScreen: React.FC = () => {
     undefined,
   );
   const [editingStreakGoal, setEditingStreakGoal] = useState<number | undefined>(undefined);
+  const [editingReminder, setEditingReminder] = useState<HabitReminder | undefined>(undefined);
 
   // Split active vs completed
   const activeActivities = activities.filter((a) => !a.completedAt);
@@ -114,6 +120,9 @@ export const ActivitiesScreen: React.FC = () => {
     name: string,
     description: string,
     requiresNote: boolean,
+    progressTrackingEnabled?: boolean,
+    metricName?: string,
+    unit?: string,
     weeklyGoal?: number,
     taskSequence?: SequenceTask[],
     sequenceMode?: 'calendar' | 'log',
@@ -122,6 +131,7 @@ export const ActivitiesScreen: React.FC = () => {
     timeBoundEndTime?: string | null,
     activityType?: 'goal' | 'endless',
     streakGoal?: number,
+    reminders?: HabitReminder[],
   ) => {
     if (editingItemId) {
       editActivity(
@@ -136,6 +146,10 @@ export const ActivitiesScreen: React.FC = () => {
         timeBoundType,
         timeBoundStartTime,
         timeBoundEndTime,
+        reminders,
+        progressTrackingEnabled,
+        metricName,
+        unit,
       );
     } else {
       createActivity(
@@ -151,6 +165,10 @@ export const ActivitiesScreen: React.FC = () => {
         timeBoundEndTime,
         activityType,
         streakGoal,
+        reminders,
+        progressTrackingEnabled,
+        metricName,
+        unit,
       );
     }
     closeModal();
@@ -172,6 +190,9 @@ export const ActivitiesScreen: React.FC = () => {
     setEditingItemName(activity.name);
     setEditingDescription(activity.description ?? '');
     setEditingRequiresNote(activity?.requiresNote ?? false);
+    setEditingProgressTrackingEnabled(activity?.progressTrackingEnabled ?? false);
+    setEditingMetricName(activity?.metricName ?? '');
+    setEditingUnit(activity?.unit ?? '');
     setEditingWeeklyGoal(activity?.weeklyGoal);
     setEditingTaskSequence(activity?.taskSequence ?? []);
     setEditingSequenceMode(activity?.sequenceMode);
@@ -180,6 +201,7 @@ export const ActivitiesScreen: React.FC = () => {
     setEditingTimeBoundEndTime(activity?.timeBoundEndTime);
     setEditingActivityType(activity?.activityType);
     setEditingStreakGoal(activity?.streakGoal);
+    setEditingReminder(activity.reminders?.[0]);
     setSelectedIds([]);
     setIsModalVisible(true);
   };
@@ -190,6 +212,9 @@ export const ActivitiesScreen: React.FC = () => {
     setEditingItemName('');
     setEditingDescription('');
     setEditingRequiresNote(false);
+    setEditingProgressTrackingEnabled(false);
+    setEditingMetricName('');
+    setEditingUnit('');
     setEditingWeeklyGoal(undefined);
     setEditingTaskSequence([]);
     setEditingSequenceMode(undefined);
@@ -198,6 +223,7 @@ export const ActivitiesScreen: React.FC = () => {
     setEditingTimeBoundEndTime(undefined);
     setEditingActivityType(undefined);
     setEditingStreakGoal(undefined);
+    setEditingReminder(undefined);
   };
 
   const clearSelection = () => setSelectedIds([]);
@@ -612,6 +638,9 @@ export const ActivitiesScreen: React.FC = () => {
         initialName={editingItemName}
         initialDescription={editingDescription}
         initialRequiresNote={editingRequiresNote}
+        initialProgressTrackingEnabled={editingProgressTrackingEnabled}
+        initialMetricName={editingMetricName}
+        initialUnit={editingUnit}
         initialWeeklyGoal={editingWeeklyGoal}
         initialTaskSequence={editingTaskSequence}
         initialSequenceMode={editingSequenceMode}
@@ -620,6 +649,7 @@ export const ActivitiesScreen: React.FC = () => {
         initialTimeBoundEndTime={editingTimeBoundEndTime}
         initialActivityType={editingActivityType}
         initialStreakGoal={editingStreakGoal}
+        initialReminder={editingReminder}
         onClose={closeModal}
         onSave={handleSaveActivity}
       />

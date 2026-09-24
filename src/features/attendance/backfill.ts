@@ -14,55 +14,24 @@ import type { Activity, LogEntry } from './attendanceService';
  * Three limits do that work, and they are all here rather than spread through
  * the UI so the rule set can be read — and changed — in one place:
  *
- *   1. A three-day window. Long enough for "I forgot last night", too short to
+ *   1. A two-day window. Long enough for "I forgot last night", too short to
  *      reconstruct a week from memory.
  *   2. A rolling quota. Three fixes per activity per thirty days; a habit that
  *      needs more than that is not being forgotten, it is being missed.
- *   3. An optional written reason, kept forever as a note when provided.
+ *   3. A written reason, enforced by the caller, kept forever as a note.
  *
  * A fixed day is also marked `backfilled` for life (see `LogEntry`), so the
  * calendar never quietly launders a fix into an ordinary green square.
  */
 
-/** How many days back a missed day stays fixable. 3 = yesterday and previous 2 days. */
-export const BACKFILL_WINDOW_DAYS = 3;
+/** How many days back a missed day stays fixable. 2 = yesterday and the day before. */
+export const BACKFILL_WINDOW_DAYS = 2;
 
 /** Fixes allowed per activity inside the rolling window below. */
 export const BACKFILL_QUOTA = 3;
 
 /** Length of the rolling window the quota is counted over. */
 export const BACKFILL_QUOTA_WINDOW_DAYS = 30;
-
-/**
- * Resolves the earliest date on which the habit is considered valid for a log.
- * Historical entries are only a fallback for legacy data without a usable
- * activity anchor; they must not move a known creation date backwards.
- */
-export const getHabitValidStartDate = (
-  activity: Activity | undefined,
-  entries: LogEntry[] = [],
-): string => {
-  if (!activity) return todayStr();
-  const dates: string[] = [];
-  if (activity.createdAt) {
-    const createdStr = dayjs(activity.createdAt).format(DATE_FORMAT);
-    if (createdStr && createdStr !== 'Invalid Date') dates.push(createdStr);
-  }
-  if (activity.sequenceStartDate && /^\d{4}-\d{2}-\d{2}$/.test(activity.sequenceStartDate)) {
-    dates.push(activity.sequenceStartDate);
-  }
-  for (const e of entries) {
-    if (e.date && /^\d{4}-\d{2}-\d{2}$/.test(e.date)) {
-      dates.push(e.date);
-    }
-  }
-  if (dates.length > 0) return dates.sort().at(-1)!;
-
-  const entryDates = entries
-    .map((entry) => entry.date)
-    .filter((date) => /^\d{4}-\d{2}-\d{2}$/.test(date));
-  return entryDates.sort()[0] ?? todayStr();
-};
 
 /** Why a day cannot be fixed. Each maps to a sentence the user is shown. */
 export type BackfillBlock =
@@ -143,8 +112,8 @@ export const getBackfillEligibility = (
   const oldest = dayjs(today).subtract(BACKFILL_WINDOW_DAYS, 'day').format(DATE_FORMAT);
   if (dateStr < oldest) return deny('too_old');
 
-  const validStartDate = getHabitValidStartDate(activity, entries);
-  if (dateStr < validStartDate) return deny('before_start');
+  const startDate = dayjs(activity.createdAt).format(DATE_FORMAT);
+  if (dateStr < startDate) return deny('before_start');
 
   if (remaining <= 0) return deny('quota_exhausted');
 

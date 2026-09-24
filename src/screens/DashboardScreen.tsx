@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { View, StyleSheet, ScrollView, StatusBar } from 'react-native';
+import { View, StyleSheet, ScrollView, StatusBar, TextInput } from 'react-native';
 import dayjs from 'dayjs';
 import { Text } from 'react-native-paper';
 import Animated, { FadeInDown } from 'react-native-reanimated';
@@ -21,7 +21,9 @@ export const DashboardScreen: React.FC = () => {
     activities,
     logs: allLogs,
     notes,
+    progress,
     getActivityStats,
+    setProgress,
     logToday,
     logTodayWithSequenceSkip,
     dropSequenceTask,
@@ -47,6 +49,14 @@ export const DashboardScreen: React.FC = () => {
       };
   const { isTodayLogged, currentStreak, longestStreak, unit, isThisWeekGoalMet } = stats;
   const isWeekly = unit === 'week';
+  const today = todayStr();
+  const todayProgress = selectedActivityId ? progress[selectedActivityId]?.[today] : undefined;
+  const previousProgressEntry = selectedActivityId
+    ? Object.entries(progress[selectedActivityId] ?? {})
+        .filter(([date]) => date < today)
+        .sort(([a], [b]) => (a < b ? 1 : -1))
+        .map(([, entry]) => entry)[0]
+    : undefined;
 
   const [noteModalVisible, setNoteModalVisible] = React.useState(false);
   const [laterModalVisible, setLaterModalVisible] = React.useState(false);
@@ -168,8 +178,6 @@ export const DashboardScreen: React.FC = () => {
     haptics.light();
     undoSequenceDrop(selectedActivityId);
   };
-
-  const today = todayStr();
 
   // Postponed days for this activity — logged, but the task carried over.
   const activitySequenceSkips: string[] = selectedActivityId
@@ -515,6 +523,73 @@ export const DashboardScreen: React.FC = () => {
           </Animated.View>
         ) : null}
 
+        {/* ── Progress tracking ────────────────────────────────────────────── */}
+        {selectedActivity?.progressTrackingEnabled &&
+        selectedActivity.metricName &&
+        selectedActivity.unit ? (
+          <Animated.View entering={FadeInDown.delay(180).springify()} style={styles.block}>
+            <Card elevation="low">
+              <View style={styles.taskHeader}>
+                <View style={[styles.taskIcon, { backgroundColor: alpha(colors.primary, 0.12) }]}>
+                  <FontAwesome5 name="chart-line" size={12} color={colors.primary} />
+                </View>
+                <Text style={[styles.taskLabel, { color: colors.textTertiary }]}>Today</Text>
+              </View>
+
+              <Text style={[styles.taskText, { color: colors.textPrimary }]}>
+                {selectedActivity.metricName}
+              </Text>
+
+              <View style={styles.progressRow}>
+                <TextInput
+                  value={todayProgress ? String(todayProgress.value) : ''}
+                  onChangeText={(text: string) => {
+                    if (!selectedActivityId) return;
+                    if (text.trim() === '') return;
+                    const parsed = Number(text);
+                    if (Number.isFinite(parsed)) {
+                      setProgress(selectedActivityId, today, parsed);
+                    }
+                  }}
+                  placeholder="0"
+                  keyboardType="decimal-pad"
+                  style={[
+                    styles.progressInput,
+                    {
+                      color: colors.textPrimary,
+                      backgroundColor: colors.background,
+                      borderColor: colors.border,
+                    },
+                  ]}
+                />
+                <Text style={[styles.progressUnit, { color: colors.textSecondary }]}>
+                  {selectedActivity.unit}
+                </Text>
+              </View>
+
+              {previousProgressEntry ? (
+                <View style={[styles.progressMeta, { backgroundColor: colors.surfaceVariant }]}>
+                  <Text style={[styles.progressMetaText, { color: colors.textSecondary }]}>
+                    Previous: {previousProgressEntry.value} {selectedActivity.unit}
+                  </Text>
+                  <Text style={[styles.progressMetaText, { color: colors.primary }]}>
+                    Change:{' '}
+                    {(
+                      (todayProgress?.value ?? previousProgressEntry.value) -
+                      previousProgressEntry.value
+                    ).toFixed(1)}{' '}
+                    {selectedActivity.unit}
+                  </Text>
+                </View>
+              ) : (
+                <Text style={[styles.progressHint, { color: colors.textTertiary }]}>
+                  No previous progress recorded
+                </Text>
+              )}
+            </Card>
+          </Animated.View>
+        ) : null}
+
         {/* ── Weekly goal ───────────────────────────────────────────────────── */}
         {isWeekly && stats.weeklyGoal ? (
           <Animated.View entering={FadeInDown.delay(180).springify()} style={styles.block}>
@@ -711,6 +786,37 @@ const styles = StyleSheet.create({
   // Blocks
   block: {
     marginTop: Spacing.md - 2,
+  },
+  progressRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    marginTop: Spacing.sm,
+  },
+  progressInput: {
+    flex: 1,
+    borderRadius: BorderRadius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    ...Typography.bodyMedium,
+  },
+  progressUnit: {
+    ...Typography.bodyMedium,
+    fontWeight: '600',
+  },
+  progressMeta: {
+    marginTop: Spacing.md,
+    padding: Spacing.sm,
+    borderRadius: BorderRadius.md,
+  },
+  progressMetaText: {
+    ...Typography.bodySmall,
+    fontWeight: '600',
+  },
+  progressHint: {
+    ...Typography.bodySmall,
+    marginTop: Spacing.sm,
   },
   taskHeader: {
     flexDirection: 'row',
